@@ -3,8 +3,10 @@ local player = {
     y = 0,
     targetX = 0,
     targetY = 0,
-    speed = 300,
-    size = 20
+    speed = 180,
+    size = 24,
+    hp = 4,
+    maxHp = 4
 }
 
 -- Helper to check if a specific pixel coordinate is inside a wall

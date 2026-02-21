@@ -49,6 +49,8 @@ function enemy.spawn(map, px, py)
             aggro = false,
             path = nil,
             pathTimer = 0,
+            hp = 3,
+            maxHp = 3,
             color = {1, 0.2, 0.2}
         }
         table.insert(enemy.list, e)
