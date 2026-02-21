@@ -1,3 +1,4 @@
+local pathfinding = require("pathfinding")
 local enemy = {}
 
 enemy.list = {}
@@ -46,6 +47,8 @@ function enemy.spawn(map, px, py)
             speed = 80,
             slotId = nil,
             aggro = false,
+            path = nil,
+            pathTimer = 0,
             color = {1, 0.2, 0.2}
         }
         table.insert(enemy.list, e)
@@ -57,6 +60,22 @@ local function isPointInWall(x, y, map)
     local ty = math.floor(y / map.gridSize) + 1
     if tx < 1 or tx > map.width or ty < 1 or ty > map.height then return true end
     return map.data[ty][tx] == 1
+end
+
+local function hasLOS(x1, y1, x2, y2, map)
+    local dx = x2 - x1
+    local dy = y2 - y1
+    local dist = math.sqrt(dx*dx + dy*dy)
+    if dist < 5 then return true end
+    
+    local steps = math.ceil(dist / 10)
+    for s = 1, steps do
+        local t = s / steps
+        if isPointInWall(x1 + dx * t, y1 + dy * t, map) then
+            return false
+        end
+    end
+    return true
 end
 
 function enemy.updateSlots(px, py, map)
@@ -103,17 +122,10 @@ function enemy.updateSlots(px, py, map)
         enemy.slots[i].baseX = px + math.cos(baseAngle) * enemy.slotRadius
         enemy.slots[i].baseY = py + math.sin(baseAngle) * enemy.slotRadius
         
-        -- FINAL LOS CHECK: Invalidate if line trace hits a wall between player and slot
+        -- FINAL LOS CHECK
         if foundValid then
-            local losSteps = 10
-            for s = 1, losSteps do
-                local t = s / losSteps
-                local lx = px + (bestX - px) * t
-                local ly = py + (bestY - py) * t
-                if isPointInWall(lx, ly, map) then
-                    foundValid = false
-                    break
-                end
+            if not hasLOS(px, py, bestX, bestY, map) then
+                foundValid = false
             end
         end
         
@@ -219,14 +231,51 @@ function enemy.update(dt, player, map)
             end
         end
         
+        local oldSlotId = e.slotId
         e.slotId = bestId
+        
         if e.slotId then
             enemy.slots[e.slotId].occupied = true
             
             local targetX = enemy.slots[e.slotId].x
             local targetY = enemy.slots[e.slotId].y
-            local dx = targetX - e.x
-            local dy = targetY - e.y
+            
+            -- Pathfinding logic
+            e.pathTimer = e.pathTimer - dt
+            
+            -- OPTIMIZATION: If we have direct LOS to target, we don't need a path
+            if hasLOS(e.x, e.y, targetX, targetY, map) then
+                e.path = nil
+            elseif not e.path or e.slotId ~= oldSlotId or e.pathTimer <= 0 then
+                e.path = pathfinding.findPath(e.x, e.y, targetX, targetY, map)
+                e.pathTimer = 0.5 
+            end
+            
+            local moveX, moveY = targetX, targetY
+            if e.path and #e.path > 0 then
+                -- SMOOTHING: Skip waypoints if we have LOS to a further point
+                while #e.path > 1 do
+                    local nextP = e.path[2]
+                    if hasLOS(e.x, e.y, nextP.x, nextP.y, map) then
+                        table.remove(e.path, 1)
+                    else
+                        break
+                    end
+                end
+                
+                local nextPoint = e.path[1]
+                local dToPoint = math.sqrt((nextPoint.x - e.x)^2 + (nextPoint.y - e.y)^2)
+                if dToPoint < 15 then
+                    table.remove(e.path, 1)
+                    if #e.path > 0 then
+                        nextPoint = e.path[1]
+                    end
+                end
+                moveX, moveY = nextPoint.x, nextPoint.y
+            end
+            
+            local dx = moveX - e.x
+            local dy = moveY - e.y
             local dist = math.sqrt(dx*dx + dy*dy)
             
             if dist > 5 then
@@ -299,6 +348,17 @@ function enemy.draw(player)
         if enemy.showSlots and not e.aggro then
             love.graphics.setColor(1, 1, 0, 0.1)
             love.graphics.circle("line", cx, cy, enemy.perceptionRadius)
+        end
+
+        -- Debug Path visualization
+        if enemy.showSlots and e.path and #e.path > 0 then
+            love.graphics.setLineWidth(1)
+            love.graphics.setColor(1, 1, 1, 0.2)
+            local lastX, lastY = e.x, e.y
+            for _, p in ipairs(e.path) do
+                love.graphics.line(lastX, lastY, p.x, p.y)
+                lastX, lastY = p.x, p.y
+            end
         end
     end
     
