@@ -9,7 +9,9 @@ local clickEffect = { x = 0, y = 0, timer = 0, lifetime = 0.3, active = false }
 -- Lighting canvases & Shader
 local lightCanvas
 local blurCanvas
+local screenCanvas
 local blurShader
+local crtShader
 local torchSize = 250
 
 function resetGame()
@@ -36,9 +38,11 @@ function love.load()
     
     -- Create canvases to draw the darkness and the blurred shadows on
     lightCanvas = love.graphics.newCanvas(love.graphics.getWidth(), love.graphics.getHeight())
-    blurCanvas = love.graphics.newCanvas(love.graphics.getWidth(), love.graphics.getHeight())
+    blurCanvas  = love.graphics.newCanvas(love.graphics.getWidth(), love.graphics.getHeight())
+    screenCanvas = love.graphics.newCanvas(love.graphics.getWidth(), love.graphics.getHeight())
     
     blurShader = love.graphics.newShader("blur.glsl")
+    crtShader  = love.graphics.newShader("crt.glsl")
     
     resetGame()
 end
@@ -69,6 +73,9 @@ function love.update(dt)
     local px = player.x + player.size / 2
     local py = player.y + player.size / 2
     player.shadowPolygon = shadows.cast(px, py, torchSize + 20)
+
+    -- Pass constant running time to the CRT shader to animate signal static noise
+    crtShader:send("time", love.timer.getTime())
 end
 
 function love.keypressed(key)
@@ -84,6 +91,10 @@ function love.mousepressed(x, y, button)
 end
 
 function love.draw()
+    -- 0. TARGET SCREEN CANVAS FOR ALL WORLD + SHADOW RENDERING
+    love.graphics.setCanvas(screenCanvas)
+    love.graphics.clear(0, 0, 0, 1)
+
     -- 1. DRAW WORLD
     love.graphics.push()
     love.graphics.translate(-math.floor(camera.x), -math.floor(camera.y))
@@ -100,7 +111,7 @@ function love.draw()
 
     -- 2. DRAW SHARP LIGHT MASK
     love.graphics.setCanvas({lightCanvas, stencil=true})
-        -- Clear with ambient darkness (0.35 brightness = 65% dark, less heavy than before)
+        -- Clear with pleasant dim dungeon ambient (0.35 brightness = 65% dark)
         love.graphics.clear(0.35, 0.35, 0.40, 1)
 
         love.graphics.push()
@@ -133,10 +144,14 @@ function love.draw()
         for i = 15, 1, -1 do
             local radius = currentTorch * (i / 15)
             local fraction = i / 15
-            -- The fraction dictates the brightness, reaching 1.0 (pure white/no shadow) at the core
-            local brightness = (1 - fraction) + 0.35
-            brightness = math.min(brightness, 1.0)
-            love.graphics.setColor(brightness, brightness, brightness, 1)
+            local lerp = 1.0 - fraction
+            
+            -- Tint light to warm vibrant orange/yellow torch hue, fading perfectly into the 35% light ambient
+            local r = 0.35 + (1.0 - 0.35) * lerp
+            local g = 0.35 + (0.80 - 0.35) * lerp
+            local b = 0.40 + (0.50 - 0.40) * lerp
+            
+            love.graphics.setColor(r, g, b, 1)
             love.graphics.circle("fill", px, py, radius)
         end
         
@@ -158,7 +173,8 @@ function love.draw()
     
     love.graphics.setCanvas()
 
-    -- 4. VERTICAL BLUR PASS & APPLY TO SCREEN
+    -- 4. VERTICAL BLUR PASS & APPLY TO SCREEN CANVAS
+    love.graphics.setCanvas(screenCanvas)
     love.graphics.setShader(blurShader)
     blurShader:send("direction", {0.0, 1.0 / love.graphics.getHeight()})
     blurShader:send("radius", 16.0)
@@ -170,7 +186,36 @@ function love.draw()
     love.graphics.setShader()
     love.graphics.setBlendMode("alpha")
 
-    -- 4. UI
+    -- 5. DRAW EMISSIVE PLAYER BLOOM
+    love.graphics.push()
+    love.graphics.translate(-math.floor(camera.x), -math.floor(camera.y))
+    love.graphics.setBlendMode("add")
+    local px = player.x + player.size / 2
+    local py = player.y + player.size / 2
+    -- Bright glowing torch core bloom, smoothed with 20 steps to avoid jagged visual bands
+    for i = 20, 1, -1 do
+        local r = 50 * (i / 20)
+        local a = (1 - (i / 20)) * 0.06
+        love.graphics.setColor(1.0, 0.6, 0.2, a)
+        love.graphics.circle("fill", px, py, r)
+    end
+    -- Solid white hot spark at center
+    love.graphics.setColor(1, 1, 0.8, 0.8)
+    love.graphics.circle("fill", px, py, 6)
+    
+    love.graphics.setBlendMode("alpha")
+    love.graphics.pop()
+    
+    -- Finish screen drawing
+    love.graphics.setCanvas()
+
+    -- 6. APPLY CRT POST-PROCESSING
+    love.graphics.setShader(crtShader)
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.draw(screenCanvas)
+    love.graphics.setShader()
+
+    -- 7. UI (Drawn over everything natively)
     love.graphics.setColor(0, 0, 0, 0.6)
     love.graphics.rectangle("fill", 10, 10, 220, 55, 5)
     love.graphics.setColor(1, 1, 1)
