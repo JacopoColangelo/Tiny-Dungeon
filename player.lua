@@ -47,8 +47,9 @@ function player.update(dt, map)
 end
 
 function player.draw()
+    local r_radius = 6
     love.graphics.setColor(0, 1, 1) -- Neon Cyan
-    love.graphics.rectangle("fill", player.x, player.y, player.size, player.size)
+    love.graphics.rectangle("fill", player.x, player.y, player.size, player.size, r_radius)
 end
 
 return player

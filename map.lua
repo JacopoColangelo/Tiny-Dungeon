@@ -23,10 +23,6 @@ function map.generate()
     local walkX = math.random(10, map.width - 10)
     local walkY = math.random(10, map.height - 10)
     
-    -- Record this as the safe spawn point
-    map.spawnX = walkX
-    map.spawnY = walkY
-    
     map.data[walkY][walkX] = 0 
     
     local steps = 600 
@@ -56,8 +52,27 @@ function map.generate()
             end
         end
     end
+
+    -- 4. Finalize Safe Spawn Point (ensure it's actually on a floor tile after all passes)
+    local foundSpawn = false
+    -- Start from middle and search outwards or just pick first floor tile
+    for y = math.floor(map.height/2), map.height do
+        for x = 1, map.width do
+            if map.data[y][x] == 0 then
+                map.spawnX, map.spawnY = x, y
+                foundSpawn = true
+                break
+            end
+        end
+        if foundSpawn then break end
+    end
+    if not foundSpawn then
+        -- This should be rare/impossible with 600 steps, but as fallback:
+        map.spawnX, map.spawnY = 20, 20
+        map.data[20][20] = 0
+    end
     
-    -- 4. Generate procedural floor texture decorations and exposed Wall Edges
+    -- 5. Generate procedural floor texture decorations and exposed Wall Edges
     for y = 1, map.height do
         for x = 1, map.width do
             if map.data[y][x] == 0 then

@@ -2,6 +2,7 @@ local player  = require("player")
 local map     = require("map")
 local utils   = require("utils")
 local shadows = require("shadows")
+local enemy   = require("enemy")
 
 local camera = { x = 0, y = 0, lerpSpeed = 5 }
 local clickEffect = { x = 0, y = 0, timer = 0, lifetime = 0.3, active = false }
@@ -30,6 +31,14 @@ function resetGame()
     -- Snap camera to player immediately on reset
     camera.x = (player.x + player.size/2) - love.graphics.getWidth()/2
     camera.y = (player.y + player.size/2) - love.graphics.getHeight()/2
+
+    -- Initialize enemies
+    enemy.init()
+    local px = player.x + player.size/2
+    local py = player.y + player.size/2
+    for i = 1, 3 do
+        enemy.spawn(map, px, py)
+    end
 end
 
 function love.load()
@@ -56,6 +65,7 @@ function love.update(dt)
     end
 
     player.update(dt, map)
+    enemy.update(dt, player, map)
 
     -- Click Animation Timer
     if clickEffect.active then
@@ -78,8 +88,12 @@ function love.update(dt)
     crtShader:send("time", love.timer.getTime())
 end
 
+local showUI = true
+
 function love.keypressed(key)
     if key == "space" then resetGame() end
+    if key == "v" then enemy.showSlots = not enemy.showSlots end
+    if key == "h" then showUI = not showUI end
 end
 
 function love.mousepressed(x, y, button)
@@ -99,6 +113,7 @@ function love.draw()
     love.graphics.push()
     love.graphics.translate(-math.floor(camera.x), -math.floor(camera.y))
         map.draw()
+        enemy.draw(player)
         player.draw()
         
         -- Click Visual
@@ -192,7 +207,8 @@ function love.draw()
     love.graphics.setBlendMode("add")
     local px = player.x + player.size / 2
     local py = player.y + player.size / 2
-    -- Bright glowing torch core bloom, smoothed with 20 steps to avoid jagged visual bands
+    
+    -- Reverted to previous warm torch bloom (circles)
     for i = 20, 1, -1 do
         local r = 50 * (i / 20)
         local a = (1 - (i / 20)) * 0.06
@@ -216,9 +232,13 @@ function love.draw()
     love.graphics.setShader()
 
     -- 7. UI (Drawn over everything natively)
-    love.graphics.setColor(0, 0, 0, 0.6)
-    love.graphics.rectangle("fill", 10, 10, 220, 55, 5)
-    love.graphics.setColor(1, 1, 1)
-    love.graphics.print("FPS: " .. love.timer.getFPS(), 20, 20)
-    love.graphics.print("SPACE: New Dungeon", 20, 40)
+    if showUI then
+        love.graphics.setColor(0, 0, 0, 0.6)
+        love.graphics.rectangle("fill", 10, 10, 240, 100, 5)
+        love.graphics.setColor(1, 1, 1)
+        love.graphics.print("FPS: " .. love.timer.getFPS(), 20, 20)
+        love.graphics.print("SPACE: New Dungeon", 20, 40)
+        love.graphics.print("V: Toggle Slots", 20, 60)
+        love.graphics.print("H: Hide UI", 20, 80)
+    end
 end
