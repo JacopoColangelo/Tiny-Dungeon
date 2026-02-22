@@ -6,7 +6,12 @@ local player = {
     speed = 180,
     size = 24,
     hp = 4,
-    maxHp = 4
+    maxHp = 4,
+    
+    -- Audio
+    footstepSound = love.audio.newSource("footstep_01.wav", "static"),
+    footstepTimer = 0,
+    footstepInterval = 0.35 -- Seconds between footsteps
 }
 
 -- Helper to check if a specific pixel coordinate is inside a wall
@@ -25,6 +30,8 @@ function player.update(dt, map)
     local distance = math.sqrt(dx*dx + dy*dy)
 
     if distance > 5 then
+        local oldX, oldY = player.x, player.y -- Store initial position
+        
         local moveX = (dx / distance) * player.speed * dt
         local moveY = (dy / distance) * player.speed * dt
 
@@ -45,6 +52,21 @@ function player.update(dt, map)
            isWall(player.x + player.size, player.y + player.size, map) then
             player.y = player.y - moveY
         end
+
+        -- Footstep logic: Only if we actually moved this frame
+        if math.abs(player.x - oldX) > 0.01 or math.abs(player.y - oldY) > 0.01 then
+            player.footstepTimer = player.footstepTimer + dt
+            if player.footstepTimer >= player.footstepInterval then
+                player.footstepSound:play()
+                player.footstepTimer = 0
+            end
+        else
+            -- Standing still even if distance > 5 (e.g. against a wall)
+            player.footstepTimer = player.footstepInterval -- Quick reset
+        end
+    else
+        -- Reset timer when standing still (close to target)
+        player.footstepTimer = player.footstepInterval
     end
 end
 

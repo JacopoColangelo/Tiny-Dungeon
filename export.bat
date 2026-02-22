@@ -14,7 +14,7 @@ if not exist %DIST_DIR% mkdir %DIST_DIR%
 :: 2. Create the .love file (a renamed zip of your project files)
 :: We use powershell to create the zip to avoid external dependencies
 echo Creating %GAME_NAME%.love...
-powershell -Command "Compress-Archive -Path *.lua, *.glsl, *.ttf -DestinationPath %DIST_DIR%\%GAME_NAME%.zip -Force"
+powershell -Command "Compress-Archive -Path *.lua, *.glsl, *.ttf, *.wav -DestinationPath %DIST_DIR%\%GAME_NAME%.zip -Force"
 move %DIST_DIR%\%GAME_NAME%.zip %DIST_DIR%\%GAME_NAME%.love
 
 :: 3. Create the .exe by fusing love.exe and our .love file

@@ -17,6 +17,8 @@ local torchSize = 250
 
 local gothicTitleFont
 local gothicButtonFont
+local ambient
+local gameOverSound
 
 local gameState = "play"
 
@@ -32,6 +34,13 @@ function resetGame()
     
     gameState = "play"
     player.hp = player.maxHp
+    
+    if gameOverSound then gameOverSound:stop() end
+    
+    if ambient then
+        ambient:setVolume(0.5)
+        ambient:play()
+    end
     
     -- Center player in the starting tile
     player.x = (map.spawnX - 1) * map.gridSize + (map.gridSize/2 - player.size/2)
@@ -70,11 +79,31 @@ function love.load()
     gothicTitleFont = love.graphics.newFont("Metamorphous-Regular.ttf", 72)
     gothicButtonFont = love.graphics.newFont("Metamorphous-Regular.ttf", 22)
     
+    -- Load audio sources
+    ambient = love.audio.newSource("dark_amb_01.wav", "stream")
+    ambient:setLooping(true)
+    ambient:setVolume(0.5)
+    ambient:play()
+
+    gameOverSound = love.audio.newSource("game_over.wav", "static")
+    
     resetGame()
 end
 
 function love.update(dt)
-    if gameState == "gameover" then return end
+    if gameState == "gameover" then 
+        -- Handle game over sound fade out
+        if gameOverSound and gameOverSound:isPlaying() then
+            local dur = gameOverSound:getDuration()
+            local pos = gameOverSound:tell()
+            local fadeTime = 1.5
+            if pos > dur - fadeTime then
+                local alpha = (dur - pos) / fadeTime
+                gameOverSound:setVolume(math.max(0, alpha))
+            end
+        end
+        return 
+    end
     
     -- Input handling
     if love.mouse.isDown(1) then
@@ -104,9 +133,16 @@ function love.update(dt)
     player.shadowPolygon = shadows.cast(px, py, torchSize + 20)
 
     -- Death check
-    if player.hp <= 0 then
+    if player.hp <= 0 and gameState == "play" then
         player.hp = 0
         gameState = "gameover"
+        
+        -- Play game over sound and fade ambient
+        if gameOverSound then 
+            gameOverSound:setVolume(1.0)
+            gameOverSound:play() 
+        end
+        if ambient then ambient:setVolume(0.1) end
     end
 
     -- Pass constant running time to the CRT shader to animate signal static noise
