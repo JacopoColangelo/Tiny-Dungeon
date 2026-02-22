@@ -4,11 +4,12 @@ local player = {
     targetX = 0,
     targetY = 0,
     speed = 180,
+    attackSlowdown = 0.4, -- Move at 40% speed during attack
     size = 24,
     hp = 4,
     maxHp = 4,
     
-    -- Audio (Only player-specific audio remains)
+    -- Audio (Player specific)
     footstepSound = love.audio.newSource("assets/audio/footstep_01.wav", "static"),
     attackSound = love.audio.newSource("assets/audio/attack_sweep_02.wav", "static"),
     footstepTimer = 0,
@@ -40,12 +41,11 @@ function player.performSweep(mx, my, enemyList)
     
     player.attackSound:play()
 
-    -- Hit detection
+    -- Hit detection logic
     for i = #enemyList, 1, -1 do
         local e = enemyList[i]
         
-        -- ONLY process if the enemy is actually alive
-        if e.state ~= "dying" then
+        if e.state == "alive" then
             local ex, ey = e.x, e.y
             local dx, dy = ex - px, ey - py
             local dist = math.sqrt(dx*dx + dy*dy)
@@ -56,45 +56,41 @@ function player.performSweep(mx, my, enemyList)
                 if diff > math.pi then diff = math.pi * 2 - diff end
                 
                 if diff < s.arcAngle / 2 then
-                    -- HIT!
                     hitsCount = hitsCount + 1
                     
                     -- Calculate Knockback vector
                     local kx, ky = 0, 0
-                    local kbd = math.sqrt(dx*dx + dy*dy)
-                    if kbd > 0 then
+                    if dist > 0 then
                         local force = 500
-                        kx = (dx / kbd) * force
-                        ky = (dy / kbd) * force
+                        kx = (dx / dist) * force
+                        ky = (dy / dist) * force
                     end
 
-                    -- DELEGATE: Tell the enemy to take damage and handle its own logic
+                    -- Delegate damage to enemy
                     e:takeDamage(s.damage, kx, ky)
                 end
             end
         end
     end
     
-    -- Add Feedback (Scaling Shake & Hit-Stop)
+    -- Global Screen Feedback
     if hitsCount > 0 then
         if _G.camera and _G.camera.addShake then
-            local intensity = 5 + (hitsCount - 1) * 2
-            _G.camera.addShake(math.min(15, intensity), 0.12)
+            _G.camera.addShake(math.min(15, 5 + (hitsCount - 1) * 2), 0.12)
         end
-        
         if _G.hitStop then
             _G.hitStop(0.07 + (hitsCount - 1) * 0.03)
         end
     end
     
-    -- Trigger Visual Effect
+    -- Sweep visual effect (Also used to track if player is attacking)
     table.insert(player.effects, {
         type = "sweep",
         x = px, y = py,
         angle = heading,
         radius = s.radius,
-        timer = 0.12, 
-        lifetime = 0.12
+        timer = 0.15, -- Duration the player is slowed
+        lifetime = 0.15
     })
     
     s.timer = s.cooldown
@@ -104,9 +100,7 @@ end
 local function isWall(px, py, map)
     local gx = math.floor(px / map.gridSize) + 1
     local gy = math.floor(py / map.gridSize) + 1
-    if map.data[gy] and map.data[gy][gx] == 1 then
-        return true
-    end
+    if map.data[gy] and map.data[gy][gx] == 1 then return true end
     return false
 end
 
@@ -115,31 +109,45 @@ function player.update(dt, map)
     local dy = player.targetY - (player.y + player.size/2)
     local distance = math.sqrt(dx*dx + dy*dy)
 
+    -- Determine if we are currently in an attack animation
+    local isAttacking = false
+    for _, fx in ipairs(player.effects) do
+        if fx.type == "sweep" then
+            isAttacking = true
+            break
+        end
+    end
+
+    -- Movement logic with slowdown check
     if distance > 5 then
         local oldX, oldY = player.x, player.y 
         
-        local moveX = (dx / distance) * player.speed * dt
-        local moveY = (dy / distance) * player.speed * dt
+        -- Apply slowdown if attacking
+        local currentSpeed = player.speed
+        if isAttacking then
+            currentSpeed = player.speed * player.attackSlowdown
+        end
+
+        local moveX = (dx / distance) * currentSpeed * dt
+        local moveY = (dy / distance) * currentSpeed * dt
 
         player.x = player.x + moveX
-        if isWall(player.x, player.y, map) or 
-           isWall(player.x + player.size, player.y, map) or
-           isWall(player.x, player.y + player.size, map) or
-           isWall(player.x + player.size, player.y + player.size, map) then
+        if isWall(player.x, player.y, map) or isWall(player.x + player.size, player.y, map) or
+           isWall(player.x, player.y + player.size, map) or isWall(player.x + player.size, player.y + player.size, map) then
             player.x = player.x - moveX
         end
 
         player.y = player.y + moveY
-        if isWall(player.x, player.y, map) or 
-           isWall(player.x + player.size, player.y, map) or
-           isWall(player.x, player.y + player.size, map) or
-           isWall(player.x + player.size, player.y + player.size, map) then
+        if isWall(player.x, player.y, map) or isWall(player.x + player.size, player.y, map) or
+           isWall(player.x, player.y + player.size, map) or isWall(player.x + player.size, player.y + player.size, map) then
             player.y = player.y - moveY
         end
 
+        -- Footstep Audio (Slowed down if movement is slow)
         if math.abs(player.x - oldX) > 0.01 or math.abs(player.y - oldY) > 0.01 then
+            local interval = isAttacking and (player.footstepInterval * 1.5) or player.footstepInterval
             player.footstepTimer = player.footstepTimer + dt
-            if player.footstepTimer >= player.footstepInterval then
+            if player.footstepTimer >= interval then
                 player.footstepSound:play()
                 player.footstepTimer = 0
             end
@@ -150,10 +158,12 @@ function player.update(dt, map)
         player.footstepTimer = player.footstepInterval
     end
 
+    -- Update Cooldowns
     for _, s in pairs(player.skills) do
         if s.timer > 0 then s.timer = math.max(0, s.timer - dt) end
     end
     
+    -- Update Effects and Particles
     for i = #player.effects, 1, -1 do
         local fx = player.effects[i]
         local oldTimer = fx.timer
@@ -163,22 +173,16 @@ function player.update(dt, map)
             local s = player.skills.sweep
             local fullArc = s.arcAngle
             local totalTravel = fullArc * 1.5
-            
             local pStart = 1 - (oldTimer / fx.lifetime)
             local pEnd = 1 - (fx.timer / fx.lifetime)
-            
             local startA = fx.angle - fullArc/2 + pStart * totalTravel
             local endA = fx.angle - fullArc/2 + pEnd * totalTravel
             
-            local pCount = 25 
-            for j = 1, pCount do
-                local lerp = (j-1)/pCount
-                local angle = startA + (endA - startA) * lerp
-                local dist = s.radius
-                
+            for j = 1, 25 do
+                local angle = startA + (endA - startA) * ((j-1)/25)
                 table.insert(player.glowParticles, {
-                    x = fx.x + math.cos(angle) * dist,
-                    y = fx.y + math.sin(angle) * dist,
+                    x = fx.x + math.cos(angle) * s.radius,
+                    y = fx.y + math.sin(angle) * s.radius,
                     life = 0.15 + math.random() * 0.1,
                     maxLife = 0.25,
                     size = 5, 
@@ -186,7 +190,6 @@ function player.update(dt, map)
                 })
             end
         end
-        
         if fx.timer <= 0 then table.remove(player.effects, i) end
     end
     
@@ -198,39 +201,32 @@ function player.update(dt, map)
 end
 
 function player.draw()
-    local r_radius = 6
+    -- Draw Player Body
     love.graphics.setColor(0, 1, 1) 
-    love.graphics.rectangle("fill", player.x, player.y, player.size, player.size, r_radius)
+    love.graphics.rectangle("fill", player.x, player.y, player.size, player.size, 6)
     
+    -- Draw Sweep Visuals
     for _, fx in ipairs(player.effects) do
         if fx.type == "sweep" then
             local alpha = (fx.timer / fx.lifetime)
-            local s = player.skills.sweep
-            
             love.graphics.setColor(0, 0.6, 0.8, alpha * 0.4)
-            local points = 80 
-            for i = 1, points do
-                local r = math.sqrt(math.random()) * s.radius
-                local a = fx.angle - s.arcAngle/2 + math.random() * s.arcAngle
-                
+            for i = 1, 80 do
+                local r = math.sqrt(math.random()) * player.skills.sweep.radius
+                local a = fx.angle - player.skills.sweep.arcAngle/2 + math.random() * player.skills.sweep.arcAngle
                 if math.random() > 0.2 then
-                    local px = math.floor(fx.x + math.cos(a) * r)
-                    local py = math.floor(fx.y + math.sin(a) * r)
+                    local px, py = fx.x + math.cos(a) * r, fx.y + math.sin(a) * r
                     love.graphics.rectangle("fill", px - px%2, py - py%2, 2, 2)
                 end
             end
         end
     end
 
+    -- Draw Particles
     love.graphics.setBlendMode("add")
     for _, p in ipairs(player.glowParticles) do
         local p_alpha = p.life / p.maxLife
-        local drawSize = math.max(1, math.floor(p.size * p_alpha))
-        
         love.graphics.setColor(p.color[1], p.color[2], p.color[3], p_alpha * 0.8)
-        local sx = math.floor(p.x)
-        local sy = math.floor(p.y)
-        love.graphics.rectangle("fill", sx - sx%2, sy - sy%2, drawSize, drawSize)
+        love.graphics.rectangle("fill", p.x - p.x%2, p.y - p.y%2, math.floor(p.size * p_alpha), math.floor(p.size * p_alpha))
     end
     love.graphics.setBlendMode("alpha")
 end
