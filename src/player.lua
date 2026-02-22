@@ -10,6 +10,7 @@ local player = {
     
     -- Audio
     footstepSound = love.audio.newSource("assets/audio/footstep_01.wav", "static"),
+    attackSound = love.audio.newSource("assets/audio/attack_sweep_02.wav", "static"),
     footstepTimer = 0,
     footstepInterval = 0.35, -- Seconds between footsteps
     
@@ -18,14 +19,15 @@ local player = {
         sweep = {
             cooldown = 0.66,
             timer = 0,
-            radius = 80,
-            arcAngle = math.pi * 0.6, -- Narrower, sharper sweep
+            radius = 65, -- Tighter range
+            arcAngle = math.pi * 0.5, -- Sharper 90 degree sweep
             damage = 30
         }
     },
     
     -- Visual Effects
-    effects = {}
+    effects = {},
+    glowParticles = {}
 }
 
 function player.performSweep(mx, my, enemyList)
@@ -36,6 +38,8 @@ function player.performSweep(mx, my, enemyList)
     local heading = math.atan2(my - py, mx - px)
     local hitsCount = 0
     
+    player.attackSound:play()
+
     -- Hit detection
     for i = #enemyList, 1, -1 do
         local e = enemyList[i]
@@ -88,8 +92,8 @@ function player.performSweep(mx, my, enemyList)
         x = px, y = py,
         angle = heading,
         radius = s.radius,
-        timer = 0.15,
-        lifetime = 0.15
+        timer = 0.12, -- Snappier!
+        lifetime = 0.12
     })
     
     s.timer = s.cooldown
@@ -156,11 +160,52 @@ function player.update(dt, map)
         if s.timer > 0 then s.timer = math.max(0, s.timer - dt) end
     end
     
-    -- Update Effects
+    -- Update Effects (Spawning Particles for Sweep)
     for i = #player.effects, 1, -1 do
         local fx = player.effects[i]
+        local oldTimer = fx.timer
         fx.timer = fx.timer - dt
+        
+        if fx.type == "sweep" then
+            local s = player.skills.sweep
+            local fullArc = s.arcAngle
+            local totalTravel = fullArc * 1.5
+            
+            -- Calculate head angle at start and end of this frame's movement
+            local pStart = 1 - (oldTimer / fx.lifetime)
+            local pEnd = 1 - (fx.timer / fx.lifetime)
+            
+            local startA = fx.angle - fullArc/2 + pStart * totalTravel
+            local endA = fx.angle - fullArc/2 + pEnd * totalTravel
+            
+            -- Spawn Energy Shards (Tapered Comet Look)
+            local pCount = 25 -- Very dense for a "solid" look
+            for j = 1, pCount do
+                local lerp = (j-1)/pCount
+                local angle = startA + (endA - startA) * lerp
+                local dist = s.radius
+                
+                table.insert(player.glowParticles, {
+                    x = fx.x + math.cos(angle) * dist,
+                    y = fx.y + math.sin(angle) * dist,
+                    life = 0.15 + math.random() * 0.1,
+                    maxLife = 0.25,
+                    size = 5, -- Base size, will scale down in draw
+                    color = math.random() > 0.4 and {0, 0.7, 1} or {1, 1, 1}
+                })
+            end
+        end
+        
         if fx.timer <= 0 then table.remove(player.effects, i) end
+    end
+    
+    -- Update Particles
+    for i = #player.glowParticles, 1, -1 do
+        local p = player.glowParticles[i]
+        p.life = p.life - dt
+        if p.life <= 0 then
+            table.remove(player.glowParticles, i)
+        end
     end
 end
 
@@ -169,48 +214,42 @@ function player.draw()
     love.graphics.setColor(0, 1, 1) -- Neon Cyan
     love.graphics.rectangle("fill", player.x, player.y, player.size, player.size, r_radius)
     
-    -- Draw Effects (Slashes)
+    -- Draw Effects (Dithered Area Fill)
     for _, fx in ipairs(player.effects) do
         if fx.type == "sweep" then
-            local progress = 1 - (fx.timer / fx.lifetime) -- 0 to 1
             local alpha = (fx.timer / fx.lifetime)
             local s = player.skills.sweep
             
-            love.graphics.setBlendMode("add")
-            
-            -- Directional Swipe Logic:
-            -- The "leading edge" of the swing moves from -arc/2 to +arc/2
-            local fullArc = s.arcAngle
-            local headAngle = fx.angle - fullArc/2 + progress * (fullArc * 1.5) -- Over-swing slightly
-            local trailSize = fullArc * 0.4
-            
-            -- Draw several trailing layers
-            local layers = 5
-            for i = 1, layers do
-                local layerAlpha = alpha * (1 - (i-1)/layers)
-                local layerAngle = headAngle - (i-1) * (trailSize / layers)
-                local startA = layerAngle - (trailSize / layers)
-                local endA = layerAngle
+            -- High-density Dithered Fill (Environment Integration)
+            love.graphics.setColor(0, 0.6, 0.8, alpha * 0.4)
+            local points = 80 -- Substantial coverage
+            for i = 1, points do
+                local r = math.sqrt(math.random()) * s.radius
+                local a = fx.angle - s.arcAngle/2 + math.random() * s.arcAngle
                 
-                -- Outer Glow
-                love.graphics.setLineWidth(12)
-                love.graphics.setColor(0, 0.4, 1, layerAlpha * 0.15)
-                love.graphics.arc("line", "open", fx.x, fx.y, fx.radius, startA, endA)
-                
-                -- Inner Glow
-                love.graphics.setLineWidth(6)
-                love.graphics.setColor(0, 0.8, 1, layerAlpha * 0.4)
-                love.graphics.arc("line", "open", fx.x, fx.y, fx.radius, startA, endA)
-                
-                -- Core
-                love.graphics.setLineWidth(2)
-                love.graphics.setColor(1, 1, 1, layerAlpha * 0.8)
-                love.graphics.arc("line", "open", fx.x, fx.y, fx.radius, startA, endA)
+                if math.random() > 0.2 then
+                    local px = math.floor(fx.x + math.cos(a) * r)
+                    local py = math.floor(fx.y + math.sin(a) * r)
+                    -- Snap to 2x2 grid for retro feel
+                    love.graphics.rectangle("fill", px - px%2, py - py%2, 2, 2)
+                end
             end
-            
-            love.graphics.setBlendMode("alpha")
         end
     end
+
+    -- Draw Shards (Tapered & Solid)
+    love.graphics.setBlendMode("add")
+    for _, p in ipairs(player.glowParticles) do
+        local p_alpha = p.life / p.maxLife
+        local drawSize = math.max(1, math.floor(p.size * p_alpha))
+        
+        love.graphics.setColor(p.color[1], p.color[2], p.color[3], p_alpha * 0.8)
+        -- Snap to 2px blocks
+        local sx = math.floor(p.x)
+        local sy = math.floor(p.y)
+        love.graphics.rectangle("fill", sx - sx%2, sy - sy%2, drawSize, drawSize)
+    end
+    love.graphics.setBlendMode("alpha")
 end
 
 return player
