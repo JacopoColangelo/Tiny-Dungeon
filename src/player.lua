@@ -9,7 +9,7 @@ local player = {
     maxHp = 4,
     
     -- Audio
-    footstepSound = love.audio.newSource("footstep_01.wav", "static"),
+    footstepSound = love.audio.newSource("assets/audio/footstep_01.wav", "static"),
     footstepTimer = 0,
     footstepInterval = 0.35 -- Seconds between footsteps
 }

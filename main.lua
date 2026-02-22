@@ -1,8 +1,8 @@
-local player  = require("player")
-local map     = require("map")
-local utils   = require("utils")
-local shadows = require("shadows")
-local enemy   = require("enemy")
+local player  = require("src.player")
+local map     = require("src.map")
+local utils   = require("src.utils")
+local shadows = require("src.shadows")
+local enemy   = require("src.enemy")
 
 local camera = { x = 0, y = 0, lerpSpeed = 5 }
 local clickEffect = { x = 0, y = 0, timer = 0, lifetime = 0.3, active = false }
@@ -73,19 +73,19 @@ function love.load()
     blurCanvas  = love.graphics.newCanvas(love.graphics.getWidth(), love.graphics.getHeight())
     screenCanvas = love.graphics.newCanvas(love.graphics.getWidth(), love.graphics.getHeight())
     
-    blurShader = love.graphics.newShader("blur.glsl")
-    crtShader  = love.graphics.newShader("crt.glsl")
+    blurShader = love.graphics.newShader("assets/shaders/blur.glsl")
+    crtShader  = love.graphics.newShader("assets/shaders/crt.glsl")
     
-    gothicTitleFont = love.graphics.newFont("Metamorphous-Regular.ttf", 72)
-    gothicButtonFont = love.graphics.newFont("Metamorphous-Regular.ttf", 22)
+    gothicTitleFont = love.graphics.newFont("assets/fonts/Metamorphous-Regular.ttf", 72)
+    gothicButtonFont = love.graphics.newFont("assets/fonts/Metamorphous-Regular.ttf", 22)
     
     -- Load audio sources
-    ambient = love.audio.newSource("dark_amb_01.wav", "stream")
+    ambient = love.audio.newSource("assets/audio/dark_amb_01.wav", "stream")
     ambient:setLooping(true)
     ambient:setVolume(0.5)
     ambient:play()
 
-    gameOverSound = love.audio.newSource("game_over.wav", "static")
+    gameOverSound = love.audio.newSource("assets/audio/game_over.wav", "static")
     
     resetGame()
 end

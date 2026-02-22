@@ -1,4 +1,4 @@
-local pathfinding = require("pathfinding")
+local pathfinding = require("src.pathfinding")
 local enemy = {}
 
 enemy.list = {}
