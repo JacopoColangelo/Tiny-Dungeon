@@ -4,7 +4,17 @@ local utils   = require("src.utils")
 local shadows = require("src.shadows")
 local enemy   = require("src.enemy")
 
-local camera = { x = 0, y = 0, lerpSpeed = 5 }
+camera = { 
+    x = 0, y = 0, 
+    lerpSpeed = 5,
+    shakeTimer = 0,
+    shakeIntensity = 0
+}
+
+function camera.addShake(intensity, duration)
+    camera.shakeIntensity = math.max(camera.shakeIntensity, intensity)
+    camera.shakeTimer = math.max(camera.shakeTimer, duration)
+end
 local clickEffect = { x = 0, y = 0, timer = 0, lifetime = 0.3, active = false }
 
 -- Lighting canvases & Shader
@@ -17,10 +27,16 @@ local torchSize = 250
 
 local gothicTitleFont
 local gothicButtonFont
+local debugFont
 local ambient
 local gameOverSound
 
 local gameState = "play"
+local hitStopTimer = 0
+
+function _G.hitStop(duration)
+    hitStopTimer = math.max(hitStopTimer, duration)
+end
 
 -- Death screen button definitions (for hit testing)
 local gameOverButtons = {
@@ -78,6 +94,7 @@ function love.load()
     
     gothicTitleFont = love.graphics.newFont("assets/fonts/Metamorphous-Regular.ttf", 72)
     gothicButtonFont = love.graphics.newFont("assets/fonts/Metamorphous-Regular.ttf", 22)
+    debugFont = love.graphics.newFont(12)
     
     -- Load audio sources
     ambient = love.audio.newSource("assets/audio/dark_amb_01.wav", "stream")
@@ -91,6 +108,12 @@ function love.load()
 end
 
 function love.update(dt)
+    -- Handle Hit-Stop (visual freeze for impact)
+    if hitStopTimer > 0 then
+        hitStopTimer = hitStopTimer - dt
+        return
+    end
+
     if gameState == "gameover" then 
         -- Handle game over sound fade out
         if gameOverSound and gameOverSound:isPlaying() then
@@ -126,6 +149,14 @@ function love.update(dt)
     local targetCamY = (player.y + player.size/2) - love.graphics.getHeight()/2
     camera.x = camera.x + (targetCamX - camera.x) * camera.lerpSpeed * dt
     camera.y = camera.y + (targetCamY - camera.y) * camera.lerpSpeed * dt
+
+    -- Update Camera Shake
+    if camera.shakeTimer > 0 then
+        camera.shakeTimer = camera.shakeTimer - dt
+        if camera.shakeTimer <= 0 then
+            camera.shakeIntensity = 0
+        end
+    end
 
     -- Visibility Polygon computation (Single Sharp Area Cast)
     local px = player.x + player.size / 2
@@ -173,6 +204,10 @@ function love.mousepressed(x, y, button)
             clickEffect.x, clickEffect.y = x + camera.x, y + camera.y
             clickEffect.timer = clickEffect.lifetime
             clickEffect.active = true
+        elseif button == 2 then
+            -- Sweep Attack (RMB)
+            local mx, my = x + camera.x, y + camera.y
+            player.performSweep(mx, my, enemy.list)
         end
     elseif gameState == "gameover" and button == 1 then
         -- Check buttons
@@ -193,7 +228,14 @@ function love.draw()
 
     -- 1. DRAW WORLD
     love.graphics.push()
-    love.graphics.translate(-math.floor(camera.x), -math.floor(camera.y))
+    
+    local sx, sy = 0, 0
+    if camera.shakeTimer > 0 then
+        sx = (love.math.random() * 2 - 1) * camera.shakeIntensity
+        sy = (love.math.random() * 2 - 1) * camera.shakeIntensity
+    end
+    
+    love.graphics.translate(-math.floor(camera.x) + sx, -math.floor(camera.y) + sy)
         map.draw()
         enemy.draw(player)
         player.draw()
@@ -212,7 +254,7 @@ function love.draw()
         love.graphics.clear(0.35, 0.35, 0.40, 1)
 
         love.graphics.push()
-        love.graphics.translate(-math.floor(camera.x), -math.floor(camera.y))
+        love.graphics.translate(-math.floor(camera.x) + sx, -math.floor(camera.y) + sy)
         
         local px = player.x + player.size / 2
         local py = player.y + player.size / 2
@@ -306,10 +348,12 @@ function love.draw()
     
     -- 6. UI & HUD (Drawn inside screenCanvas so CRT shader affects them)
     if showUI then
+        love.graphics.setFont(debugFont)
         love.graphics.setLineWidth(1)
         love.graphics.setColor(0, 0, 0, 0.4)
         love.graphics.rectangle("fill", 10, 10, 240, 120, 5)
         love.graphics.setColor(1, 1, 1, 0.9)
+        
         love.graphics.print("FPS: " .. love.timer.getFPS(), 20, 20)
         love.graphics.print("SPACE: New Dungeon", 20, 40)
         love.graphics.print("V: Toggle Slots", 20, 60)
@@ -317,6 +361,7 @@ function love.draw()
         love.graphics.print("K: Damage Player", 20, 100)
     end
     drawHUD()
+    drawSkillBar()
 
     if gameState == "gameover" then
         drawGameOver()
@@ -369,9 +414,69 @@ function drawHUD()
             love.graphics.setColor(1, 1, 1, 0.5 * alpha)
             love.graphics.rectangle("fill", x+3, y+3, 3, 3)
             
-            love.graphics.setBlendMode("alpha")
         end
     end
+end
+
+function drawSkillBar()
+    local w, h = love.graphics.getWidth(), love.graphics.getHeight()
+    local boxSize = 40
+    local barW = boxSize + 16
+    local barH = boxSize + 16
+    local bx = w/2 - barW/2
+    local by = h - barH - 20
+
+    -- Background Bar (Glassy/Stone)
+    love.graphics.setColor(0, 0, 0, 0.4)
+    love.graphics.rectangle("fill", bx-2, by+2, barW, barH, 4)
+    love.graphics.setColor(0.08, 0.08, 0.08, 0.9)
+    love.graphics.rectangle("fill", bx, by, barW, barH, 4)
+    
+    -- Sweep Skill Box
+    local sx = bx + (barW - boxSize)/2
+    local sy = by + (barH - boxSize)/2
+    local skill = player.skills.sweep
+    
+    -- Draw box (Stone style)
+    love.graphics.setColor(0.05, 0.05, 0.05, 1)
+    love.graphics.rectangle("fill", sx, sy, boxSize, boxSize, 2)
+    love.graphics.setLineWidth(1)
+    love.graphics.setColor(0.6, 0.6, 0.55, 0.4)
+    love.graphics.rectangle("line", sx, sy, boxSize, boxSize, 2)
+    
+    -- Cooldown overlay
+    if skill.timer > 0 then
+        local pct = skill.timer / skill.cooldown
+        -- Vibrant Crimson Overlay
+        love.graphics.setColor(0.8, 0, 0, 0.6)
+        love.graphics.rectangle("fill", sx, sy + boxSize * (1 - pct), boxSize, boxSize * pct, 2)
+        -- Top "shimmer" line
+        love.graphics.setColor(1, 0.4, 0.4, 0.8)
+        love.graphics.rectangle("fill", sx, sy + boxSize * (1 - pct), boxSize, 1)
+    else
+        -- Ready Flash/Glow
+        local flash = math.sin(love.timer.getTime() * 8) * 0.5 + 0.5
+        love.graphics.setBlendMode("add")
+        love.graphics.setColor(0, 0.8, 1, 0.2 * flash)
+        love.graphics.rectangle("fill", sx, sy, boxSize, boxSize, 2)
+        love.graphics.setBlendMode("alpha")
+    end
+    
+    -- Label "RMB"
+    love.graphics.setFont(gothicButtonFont)
+    love.graphics.setColor(0.8, 0.8, 0.7, 0.8)
+    love.graphics.print("RMB", sx + 3, sy + 1, 0, 0.45, 0.45)
+    
+    -- Icon: Stylized Slash
+    love.graphics.setLineWidth(2)
+    love.graphics.setBlendMode("add")
+    if skill.timer <= 0 then
+        love.graphics.setColor(0, 1, 1, 0.6) -- Bright cyan when ready
+    else
+        love.graphics.setColor(1, 1, 1, 0.15) -- Dim when on cooldown
+    end
+    love.graphics.line(sx + 10, sy + 30, sx + 30, sy + 10)
+    love.graphics.setBlendMode("alpha")
 end
 
 local function drawStoneTablet(x, y, w, h, text, isHover)

@@ -49,7 +49,12 @@ function enemy.spawn(map, px, py)
             aggro = false,
             path = nil,
             pathTimer = 0,
-            color = {1, 0.2, 0.2}
+            color = {1, 0.2, 0.2},
+            hp = 100,
+            maxHp = 100,
+            hitFlash = 0,
+            kbX = 0,
+            kbY = 0
         }
         table.insert(enemy.list, e)
     end
@@ -167,6 +172,24 @@ function enemy.update(dt, player, map)
     local px = player.x + player.size/2
     local py = player.y + player.size/2
     
+    -- Update individual enemy physics (Knockback & Flashing)
+    for _, e in ipairs(enemy.list) do
+        if e.hitFlash > 0 then e.hitFlash = e.hitFlash - dt end
+        
+        if math.abs(e.kbX) > 1 or math.abs(e.kbY) > 1 then
+            local nx = e.x + e.kbX * dt
+            local ny = e.y + e.kbY * dt
+            if not isPointInWall(nx, ny, map) then
+                e.x, e.y = nx, ny
+            end
+            -- Friction
+            e.kbX = e.kbX * math.exp(-8 * dt)
+            e.kbY = e.kbY * math.exp(-8 * dt)
+        else
+            e.kbX, e.kbY = 0, 0
+        end
+    end
+
     enemy.updateSlots(px, py, map)
     
     -- Clear slot occupancy
@@ -337,12 +360,37 @@ function enemy.draw(player)
         end
         love.graphics.setBlendMode("alpha")
         
-        if e.aggro then
+        if e.hitFlash > 0 then
+            love.graphics.setColor(1, 1, 1, 1) -- Flash White on hit
+        elseif e.aggro then
             love.graphics.setColor(e.color[1], e.color[2], e.color[3], 1)
         else
             love.graphics.setColor(0.4, 0.4, 0.4, 1) -- Dim if not aggroed
         end
         love.graphics.rectangle("fill", cx - e.size/2, cy - e.size/2, e.size, e.size, r_radius)
+
+        -- Proximity Health Bar
+        if player then
+            local px = player.x + player.size/2
+            local py = player.y + player.size/2
+            local dist = math.sqrt((cx - px)^2 + (cy - py)^2)
+            local viewDist = 300
+            
+            if dist < viewDist then
+                local alpha = (1 - (dist / viewDist)) * 0.9
+                local bw, bh = 30, 4
+                local bx, by = cx - bw/2, cy - e.size/2 - 10
+                
+                -- Bar Frame
+                love.graphics.setColor(0, 0, 0, alpha * 0.6)
+                love.graphics.rectangle("fill", bx, by, bw, bh)
+                
+                -- Bar Fill
+                local fillPct = math.max(0, e.hp / e.maxHp)
+                love.graphics.setColor(1, 0.2, 0.2, alpha)
+                love.graphics.rectangle("fill", bx, by, bw * fillPct, bh)
+            end
+        end
 
         -- Debug perception range
         if enemy.showSlots and not e.aggro then
@@ -386,7 +434,12 @@ function enemy.draw(player)
                 love.graphics.setColor(1, 0, 0, 0.4)
                 love.graphics.print("X", s.x - 4, s.y - 7)
             end
-            love.graphics.print(tostring(i), s.x - 4, s.y + 10, 0, 0.7, 0.7)
+            
+            -- Use default font for debug numbers
+            local oldFont = love.graphics.getFont()
+            love.graphics.setFont(debugFont or love.graphics.newFont(12)) -- Fallback to nil isn't safe for setFont, but debugFont is global now
+            love.graphics.print(tostring(i), s.x - 4, s.y + 10)
+            if oldFont then love.graphics.setFont(oldFont) end
         end
     end
 end
