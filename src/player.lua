@@ -11,6 +11,8 @@ local player = {
     -- Audio
     footstepSound = love.audio.newSource("assets/audio/footstep_01.wav", "static"),
     attackSound = love.audio.newSource("assets/audio/attack_sweep_02.wav", "static"),
+    hitSound = love.audio.newSource("assets/audio/enemy_hit.wav", "static"),
+    deathSound = love.audio.newSource("assets/audio/enemy_death.wav", "static"),
     footstepTimer = 0,
     footstepInterval = 0.35, -- Seconds between footsteps
     
@@ -57,6 +59,7 @@ function player.performSweep(mx, my, enemyList)
                 hitsCount = hitsCount + 1
                 e.hp = e.hp - s.damage
                 e.hitFlash = 0.15 -- Flash white for 0.15s
+                player.hitSound:play()
                 
                 -- Apply Knockback
                 local kbd = math.sqrt(dx*dx + dy*dy)
@@ -67,6 +70,7 @@ function player.performSweep(mx, my, enemyList)
                 end
 
                 if e.hp <= 0 then
+                    player.deathSound:play()
                     table.remove(enemyList, i)
                 end
             end
