@@ -185,7 +185,7 @@ function player.update(dt, map)
                     y = fx.y + math.sin(angle) * s.radius,
                     life = 0.15 + math.random() * 0.1,
                     maxLife = 0.25,
-                    size = 5, 
+                    size = 10, 
                     color = math.random() > 0.4 and {0, 0.7, 1} or {1, 1, 1}
                 })
             end
