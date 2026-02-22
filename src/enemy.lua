@@ -3,18 +3,20 @@ local enemy = {}
 
 enemy.list = {}
 enemy.slots = {}
+enemy.particles = {} -- Container for death effects
 enemy.showSlots = false
 enemy.numSlots = 8
 enemy.slotRadius = 50
 enemy.perceptionRadius = 250
 enemy.groupAggroRadius = 350
 
--- Added Audio for feedback
+-- Audio Assets
 enemy.hitSound = love.audio.newSource("assets/audio/enemy_hit.wav", "static")
 enemy.deathSound = love.audio.newSource("assets/audio/enemy_death.wav", "static")
 
 function enemy.init()
     enemy.list = {}
+    enemy.particles = {} -- Clear particles on reset
     for i = 1, enemy.numSlots do
         enemy.slots[i] = { x = 0, y = 0, occupied = false, valid = false }
     end
@@ -44,7 +46,7 @@ function enemy.spawn(map, px, py)
     
     if found then
         local e = {
-            state = "alive", -- Added state track
+            state = "alive",
             x = spawnX,
             y = spawnY,
             size = 20,
@@ -61,7 +63,6 @@ function enemy.spawn(map, px, py)
             kbY = 0
         }
 
-        -- RESTORED: Damage detection function
         function e:takeDamage(damage, kx, ky)
             if self.state == "dying" then return end
             self.hp = self.hp - damage
@@ -69,7 +70,14 @@ function enemy.spawn(map, px, py)
             if self.hp <= 0 then
                 enemy.deathSound:play()
                 self.state = "dying"
-                self.kbX, self.kbY = 0, 0 -- Stop moving when dead
+                -- Spawn particles
+                for p = 1, 15 do
+                    table.insert(enemy.particles, {
+                        x = self.x, y = self.y,
+                        vx = math.random(-150, 150), vy = math.random(-150, 150),
+                        life = 0.5, maxLife = 0.5, size = math.random(2, 4)
+                    })
+                end
             else
                 enemy.hitSound:play()
                 self.kbX, self.kbY = kx, ky
@@ -187,12 +195,21 @@ function enemy.update(dt, player, map)
     local px = player.x + player.size/2
     local py = player.y + player.size/2
     
-    -- Update individual enemy physics & Death check
+    -- Update Particles
+    for i = #enemy.particles, 1, -1 do
+        local p = enemy.particles[i]
+        p.life = p.life - dt
+        p.x = p.x + p.vx * dt
+        p.y = p.y + p.vy * dt
+        if p.life <= 0 then table.remove(enemy.particles, i) end
+    end
+
+    -- Update individual enemy physics & Removal
     for i = #enemy.list, 1, -1 do
         local e = enemy.list[i]
         
         if e.state == "dying" then
-            table.remove(enemy.list, i) -- Simple immediate removal for now
+            table.remove(enemy.list, i)
         else
             if e.hitFlash > 0 then e.hitFlash = e.hitFlash - dt end
             
@@ -319,7 +336,6 @@ function enemy.update(dt, player, map)
         end
     end
     
-    -- Enemy Repulsion
     local minEnemyDist = 25
     for i = 1, #enemy.list do
         local e1 = enemy.list[i]
@@ -328,7 +344,6 @@ function enemy.update(dt, player, map)
             local dx = e2.x - e1.x
             local dy = e2.y - e1.y
             local dist = math.sqrt(dx*dx + dy*dy)
-            
             if dist < minEnemyDist and dist > 0 then
                 local push = (minEnemyDist - dist) / 2
                 local nx, ny = (dx/dist) * push, (dy/dist) * push
@@ -343,8 +358,8 @@ function enemy.update(dt, player, map)
     end
 end
 
--- Your exact Draw function preserved
 function enemy.draw(player)
+    -- Draw enemies
     for _, e in ipairs(enemy.list) do
         local cx, cy = e.x, e.y
         local r_radius = 6
@@ -367,11 +382,9 @@ function enemy.draw(player)
         love.graphics.rectangle("fill", cx - e.size/2, cy - e.size/2, e.size, e.size, r_radius)
 
         if player then
-            local px = player.x + player.size/2
-            local py = player.y + player.size/2
+            local px, py = player.x + player.size/2, player.y + player.size/2
             local dist = math.sqrt((cx - px)^2 + (cy - py)^2)
             local viewDist = 300
-            
             if dist < viewDist then
                 local alpha = (1 - (dist / viewDist)) * 0.9
                 local bw, bh = 30, 4
@@ -400,9 +413,14 @@ function enemy.draw(player)
         end
     end
     
+    -- Draw particles
+    for _, p in ipairs(enemy.particles) do
+        love.graphics.setColor(1, 0.1, 0.1, p.life / p.maxLife) 
+        love.graphics.rectangle("fill", p.x, p.y, p.size, p.size)
+    end
+
     if enemy.showSlots and player then
-        local px = player.x + player.size/2
-        local py = player.y + player.size/2
+        local px, py = player.x + player.size/2, player.y + player.size/2
         for i = 1, enemy.numSlots do
             local s = enemy.slots[i]
             love.graphics.setLineWidth(1)
