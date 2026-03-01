@@ -145,6 +145,9 @@ function player.update(dt, map)
             player.y = player.y - moveY
         end
 
+        player.lastX = oldX
+        player.lastY = oldY
+
         -- Footstep Audio (Slowed down if movement is slow)
         if math.abs(player.x - oldX) > 0.01 or math.abs(player.y - oldY) > 0.01 then
             local interval = isAttacking and (player.footstepInterval * 1.5) or player.footstepInterval

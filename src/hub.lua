@@ -23,20 +23,20 @@ hub.portalParticles = {}
 -- ── Color Palette (withered grove / gothic stone) ────────────────────────────
 
 local colors = {
-    -- Floors (brighter to catch multiply lighting properly)
-    floorBase     = {0.12, 0.15, 0.11},      -- mossy green
-    floorAlt      = {0.14, 0.12, 0.09},      -- earthy brown
+    -- Floors (Lush Forest Camp)
+    floorBase     = {0.15, 0.25, 0.12},      -- vibrant mossy green
+    floorAlt      = {0.18, 0.18, 0.10},      -- warm earthy dirt
     -- Walls
-    wallBase      = {0.06, 0.07, 0.05},      -- deep dark green-black
+    wallBase      = {0.05, 0.08, 0.04},      -- very dark forest green
     -- Decorations
-    moss          = {0.10, 0.18, 0.10, 0.8}, -- green moss patches
-    lichen        = {0.18, 0.15, 0.08, 0.6}, -- yellow-brown lichen
-    deadLeaf      = {0.20, 0.12, 0.06, 0.5}, -- brown dead leaves
-    stone         = {0.22, 0.20, 0.18, 0.4}, -- crumbled stone
+    moss          = {0.20, 0.35, 0.15, 0.8}, -- bright green moss patches
+    lichen        = {0.25, 0.22, 0.10, 0.6}, -- warm yellow lichen
+    deadLeaf      = {0.30, 0.15, 0.08, 0.8}, -- vibrant autumn leaves
+    stone         = {0.22, 0.20, 0.18, 0.6}, -- campsite stones
     -- Contour walls
-    contourDark   = {0.05, 0.06, 0.04, 1},
-    contourLight  = {0.45, 0.48, 0.42, 1},   -- much brighter for highlights
-    contourAccent = {0.55, 0.58, 0.52, 1},
+    contourDark   = {0.04, 0.07, 0.03, 1},
+    contourLight  = {0.35, 0.45, 0.28, 1},   -- lush highlights
+    contourAccent = {0.45, 0.55, 0.35, 1},
 }
 
 -- ── Hand-Crafted Layout ──────────────────────────────────────────────────────
@@ -122,6 +122,7 @@ local deadTrees = {
 function hub.generate()
     hub.decorations = {}
     hub.contours = {}
+    hub.grassList = {}
 
     -- Copy layout into data
     for y = 1, hub.height do
@@ -136,10 +137,11 @@ function hub.generate()
         if hub.data[p.y] then hub.data[p.y][p.x] = 1 end
     end
 
-    -- Generate floor decorations (moss, lichen, dead leaves, pebbles)
+    -- Generate floor decorations and reactive grass
     for y = 1, hub.height do
         for x = 1, hub.width do
             if hub.data[y][x] == 0 then
+                -- 1. Decals
                 local numDecals = love.math.random(2, 7)
                 for i = 1, numDecals do
                     local px = (x - 1) * hub.gridSize + love.math.random(4, hub.gridSize - 4)
@@ -157,6 +159,32 @@ function hub.generate()
                         color = colors.stone
                     end
                     table.insert(hub.decorations, {x = px, y = py, r = pr, color = color})
+                end
+
+                -- 2. Reactive Grass
+                -- Spawn more grass near the edges, less in the direct path
+                local spawnChance = (x < 8 or x > 16) and 0.8 or 0.3
+                if love.math.random() < spawnChance then
+                    local numGrass = love.math.random(3, 8)
+                    for i = 1, numGrass do
+                        local gx = (x - 1) * hub.gridSize + love.math.random(2, hub.gridSize - 2)
+                        local gy = (y - 1) * hub.gridSize + love.math.random(2, hub.gridSize - 2)
+                        
+                        -- Keep grass away from the portal center so it doesn't clip into it
+                        local pdx, pdy = gx - hub.portalX * hub.gridSize, gy - hub.portalY * hub.gridSize
+                        if (pdx*pdx + pdy*pdy) > (hub.portalRadius * hub.portalRadius + 400) then
+                            table.insert(hub.grassList, {
+                                x = gx,
+                                y = gy,
+                                length = love.math.random(8, 18),
+                                baseAngle = -math.pi / 2 + (love.math.random() - 0.5) * 0.4, -- mostly straight up, slight variance
+                                currentAngle = 0,
+                                targetAngle = 0,
+                                swayOffset = love.math.random() * math.pi * 2,
+                                stiffness = love.math.random(8, 15) -- how fast it springs back
+                            })
+                        end
+                    end
                 end
             end
         end
@@ -251,6 +279,62 @@ function hub.generate()
     shadows.updateMapEdges(hub)
 end
 
+function hub.updateGrass(dt, player)
+    local t = love.timer.getTime()
+    local px = player.x + player.size / 2
+    local py = player.y + player.size / 2
+    
+    -- Calculate velocity manually since player doesn't store vx/vy
+    local vx = player.x - (player.lastX or player.x)
+    local vy = player.y - (player.lastY or player.y)
+    local pVelocitySq = (vx * vx + vy * vy) / (dt * dt + 0.0001)
+    
+    local isPlayerMoving = pVelocitySq > 100 -- speed threshold
+
+    local windSway = math.sin(t * 1.5) * 0.15 + math.sin(t * 0.8) * 0.1
+
+    for _, grass in ipairs(hub.grassList) do
+        -- Base wind
+        local ambientAngle = grass.baseAngle + math.sin(t * 2 + grass.swayOffset) * windSway
+
+        -- Player interaction
+        local dx = grass.x - px
+        local dy = grass.y - py
+        local distSq = dx*dx + dy*dy
+        
+        local interactionRadius = (player.size * 1.2)
+        local interactSq = interactionRadius * interactionRadius
+
+        if isPlayerMoving and distSq < interactSq then
+            -- Bend away from player based on distance and player speed
+            local dist = math.sqrt(distSq)
+            local pushFactor = 1.0 - (dist / interactionRadius)
+            local pushAngle = math.atan2(dy, dx)
+            
+            -- Clamp push angle relative to base angle so it doesn't bend completely flat or backwards unnaturally
+            local angleDiff = pushAngle - grass.baseAngle
+            -- Normalize difference
+            while angleDiff > math.pi do angleDiff = angleDiff - 2*math.pi end
+            while angleDiff < -math.pi do angleDiff = angleDiff + 2*math.pi end
+            
+            -- Max bend is about 70 degrees (1.2 rad)
+            local maxBend = 1.2 * pushFactor
+            if angleDiff > 0 then
+                grass.targetAngle = grass.baseAngle + math.min(angleDiff, maxBend)
+            else
+                grass.targetAngle = grass.baseAngle + math.max(angleDiff, -maxBend)
+            end
+        else
+            -- Snap back to wind angle
+            grass.targetAngle = ambientAngle
+        end
+
+        -- Spring physics
+        local diff = grass.targetAngle - grass.currentAngle
+        grass.currentAngle = grass.currentAngle + diff * grass.stiffness * dt
+    end
+end
+
 function hub.updatePortal(dt, map)
     -- Spawn portal particles
     if #hub.portalParticles < 25 then
@@ -330,7 +414,9 @@ function hub.draw()
             end
         end
     end
-
+    
+    hub.drawGrass()
+    
     -- Floor decorations
     for _, dec in ipairs(hub.decorations) do
         love.graphics.setColor(dec.color[1], dec.color[2], dec.color[3], dec.color[4] or 1)
@@ -398,12 +484,34 @@ function hub.draw()
             love.graphics.push()
             love.graphics.translate(love.math.random()*0.5, love.math.random()*0.5)
             love.graphics.line(loop)
+            love.graphics.line(loop)
             love.graphics.pop()
         end
     end
 end
 
--- ── Portal Drawing ───────────────────────────────────────────────────────────
+function hub.drawGrass()
+    love.graphics.setLineStyle("rough") -- Keep it pixelated/sharp
+    love.graphics.setLineWidth(2)
+
+    for _, grass in ipairs(hub.grassList) do
+        -- Calculate the tip of the grass blade
+        local tipX = grass.x + math.cos(grass.currentAngle) * grass.length
+        local tipY = grass.y + math.sin(grass.currentAngle) * grass.length
+        
+        -- Color calculation: darker at the base, lighter/more vibrant at the tip
+        -- We also shift the hue slightly based on the bend angle to simulate caught light
+        local bendAmount = math.abs(grass.currentAngle - grass.baseAngle)
+        
+        love.graphics.setColor(0.08, 0.18, 0.08, 1) -- Base dark green
+        love.graphics.line(grass.x, grass.y, grass.x + (tipX - grass.x)*0.4, grass.y + (tipY - grass.y)*0.4)
+        
+        love.graphics.setColor(0.20 + bendAmount*0.1, 0.40 + bendAmount*0.15, 0.15, 1) -- Tip bright green
+        love.graphics.line(grass.x + (tipX - grass.x)*0.4, grass.y + (tipY - grass.y)*0.4, tipX, tipY)
+    end
+end
+
+-- ── Draw Portal ──────────────────────────────────────────────────────────────
 
 function hub.drawPortal(px, py, radius)
     px = px or hub.getPortalWorldPos()

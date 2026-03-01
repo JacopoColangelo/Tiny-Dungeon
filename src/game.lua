@@ -166,6 +166,7 @@ function game.update(dt, vx, vy, isPaused)
         hub.updatePortal(dt, map)
     else
         hub.updatePortal(dt, hub)
+        hub.updateGrass(dt, player)
         if enemy.showSlots then
             -- Update slots in Hub if requested for debug visibility
             enemy.updateSlots(player.x + player.size/2, player.y + player.size/2, currentMap())
@@ -397,7 +398,7 @@ function game.draw(canvas, isPaused, vx, vy)
     if portalPromptAlpha > 0 then
         local smallFont = hud.getFont("small")
         love.graphics.setFont(smallFont)
-        local text = "[E] to interact"
+        local text = "[E] to Interact"
         local tw = smallFont:getWidth(text)
         
         local py = 600 -- Adjusted bottom pos in 720p space
