@@ -1,0 +1,206 @@
+local hud = require("src.hud")
+
+local menu = {}
+
+-- ── Animated Particles (drifting embers) ─────────────────────────────────────
+
+local particles = {}
+local maxParticles = 60
+
+local function spawnParticle(w, h)
+    return {
+        x = math.random() * w,
+        y = h + math.random() * 20,
+        vx = (math.random() - 0.5) * 15,
+        vy = -(10 + math.random() * 25),
+        life = 3 + math.random() * 4,
+        maxLife = 0,
+        size = 1 + math.random() * 2,
+        color = math.random() > 0.6
+            and {1.0, 0.5, 0.15}   -- orange ember
+            or  {0.8, 0.35, 0.1}   -- dim ember
+    }
+end
+
+-- ── Button Definitions ───────────────────────────────────────────────────────
+
+local buttons = {
+    {id = "newgame",  text = "New Game",  w = 240, h = 48, disabled = false},
+    {id = "loadgame", text = "Load Game", w = 240, h = 48, disabled = true},
+    {id = "options",  text = "Options",   w = 240, h = 48, disabled = false},
+    {id = "quit",     text = "Quit",      w = 240, h = 48, disabled = false},
+}
+
+-- Runtime button positions (computed in draw)
+local buttonRects = {}
+
+-- Pending result from a click
+local pendingAction = nil
+
+-- ── Public API ───────────────────────────────────────────────────────────────
+
+function menu.load()
+    -- Seed initial particles
+    local w, h = 1280, 720
+    for i = 1, maxParticles do
+        local p = spawnParticle(w, h)
+        p.y = math.random() * h          -- scatter vertically
+        p.life = math.random() * p.life  -- stagger lifetimes
+        p.maxLife = p.life
+        table.insert(particles, p)
+    end
+end
+
+function menu.update(dt, vx, vy)
+    menu.lastVX, menu.lastVY = vx, vy
+    local w, h = 1280, 720
+
+    -- Update particles
+    for i = #particles, 1, -1 do
+        local p = particles[i]
+        p.x = p.x + p.vx * dt
+        p.y = p.y + p.vy * dt
+        p.life = p.life - dt
+        if p.life <= 0 then
+            table.remove(particles, i)
+        end
+    end
+
+    -- Respawn
+    while #particles < maxParticles do
+        local p = spawnParticle(w, h)
+        p.maxLife = p.life
+        table.insert(particles, p)
+    end
+
+    return pendingAction
+end
+
+function menu.draw(screenCanvas)
+    local w, h = 1280, 720
+
+    love.graphics.setCanvas(screenCanvas)
+    love.graphics.clear(0, 0, 0, 1)
+
+    -- Background vignette
+    love.graphics.setBlendMode("alpha")
+    for i = 1, 8 do
+        local a = (1 - i/8) * 0.04
+        love.graphics.setColor(0.06, 0.04, 0.02, a)
+        love.graphics.ellipse("fill", w/2, h/2, w/2 * (i/8), h/2 * (i/8))
+    end
+
+    -- Particles (embers)
+    love.graphics.setBlendMode("add")
+    for _, p in ipairs(particles) do
+        local alpha = math.min(1, p.life / (p.maxLife * 0.3))
+        alpha = alpha * math.min(1, (p.maxLife - p.life) / 0.5) -- fade in
+        love.graphics.setColor(p.color[1], p.color[2], p.color[3], alpha * 0.6)
+        love.graphics.rectangle("fill",
+            math.floor(p.x) - math.floor(p.x) % 2,
+            math.floor(p.y) - math.floor(p.y) % 2,
+            p.size, p.size)
+    end
+    love.graphics.setBlendMode("alpha")
+
+    -- Title: "Tiny Dungeon"
+    local titleFont = hud.getFont("title")
+    love.graphics.setFont(titleFont)
+    local title = "Tiny Dungeon"
+    local tw = titleFont:getWidth(title)
+    local tx = w/2 - tw/2
+    local ty = h * 0.15
+
+    -- Title glow
+    love.graphics.setBlendMode("add")
+    love.graphics.setColor(0.4, 0.08, 0.02, 0.15)
+    love.graphics.ellipse("fill", w/2, ty + 40, tw/2 + 40, 50)
+    love.graphics.setBlendMode("alpha")
+
+    -- Title shadow
+    love.graphics.setColor(0.25, 0, 0, 0.9)
+    love.graphics.print(title, tx + 3, ty + 3)
+    -- Title face
+    love.graphics.setColor(0.6, 0.12, 0.08, 1)
+    love.graphics.print(title, tx, ty)
+
+    -- Ornate divider
+    local divY = ty + titleFont:getHeight() + 15
+    local divW = tw + 100
+    local ivory = {0.85, 0.85, 0.8}
+
+    love.graphics.setBlendMode("add")
+    love.graphics.setColor(0.3, 0.08, 0.05, 0.08)
+    love.graphics.ellipse("fill", w/2, divY, divW/2, 8)
+    love.graphics.setBlendMode("alpha")
+
+    love.graphics.setLineWidth(1)
+    for i = 0, divW do
+        local a = (1 - math.abs(i - divW/2) / (divW/2)) * 0.35
+        love.graphics.setColor(ivory[1], ivory[2], ivory[3], a)
+        love.graphics.points(w/2 - divW/2 + i, divY)
+    end
+
+    -- Flourish knots
+    local function drawKnot(fx, fy)
+        love.graphics.setColor(ivory[1], ivory[2], ivory[3], 0.4)
+        love.graphics.rectangle("line", fx-5, fy-5, 10, 10, 2)
+        love.graphics.rectangle("fill", fx-2, fy-2, 4, 4)
+    end
+    drawKnot(w/2 - divW/2, divY)
+    drawKnot(w/2 + divW/2, divY)
+    drawKnot(w/2, divY)
+
+    -- Buttons
+    local vx, vy = menu.lastVX or 0, menu.lastVY or 0
+
+    local btnSpacing = 12
+    local totalBtnH = 0
+    for _, b in ipairs(buttons) do totalBtnH = totalBtnH + b.h end
+    totalBtnH = totalBtnH + btnSpacing * (#buttons - 1)
+
+    local startY = divY + 50
+    buttonRects = {}
+
+    for i, b in ipairs(buttons) do
+        local bx = w/2 - b.w/2
+        local by = startY + (i-1) * (b.h + btnSpacing)
+
+        buttonRects[i] = {x = bx, y = by, w = b.w, h = b.h, id = b.id, disabled = b.disabled}
+
+        local isHover = not b.disabled and
+            vx >= bx and vx <= bx + b.w and
+            vy >= by and vy <= by + b.h
+
+        hud.drawStoneTablet(bx, by, b.w, b.h, b.text, isHover, b.disabled)
+    end
+
+    -- Finish screen
+    love.graphics.setCanvas()
+end
+
+function menu.keypressed(key)
+    if key == "escape" then
+        pendingAction = "quit"
+    elseif key == "return" then
+        pendingAction = "newgame"
+    end
+end
+
+function menu.mousepressed(vx, vy, button)
+    if button ~= 1 then return end
+    for _, rect in ipairs(buttonRects) do
+        if not rect.disabled and
+           vx >= rect.x and vx <= rect.x + rect.w and
+           vy >= rect.y and vy <= rect.y + rect.h then
+            pendingAction = rect.id
+            return
+        end
+    end
+end
+
+function menu.resetAction()
+    pendingAction = nil
+end
+
+return menu

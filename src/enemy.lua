@@ -18,7 +18,7 @@ function enemy.init()
     enemy.list = {}
     enemy.particles = {}
     for i = 1, enemy.numSlots do
-        enemy.slots[i] = { x = 0, y = 0, occupied = false, valid = false }
+        enemy.slots[i] = { x = 0, y = 0, baseX = 0, baseY = 0, occupied = false, valid = false }
     end
 end
 

@@ -7,7 +7,11 @@ map.data = {}
 map.spawnX = 0
 map.spawnY = 0
 
-function map.generate()
+function map.generate(seed)
+    if seed then
+        love.math.setRandomSeed(seed)
+        math.randomseed(seed)
+    end
     map.decorations = {}
     map.contours = {}
     -- 1. Fill map with walls (1)
@@ -71,8 +75,23 @@ function map.generate()
         map.spawnX, map.spawnY = 20, 20
         map.data[20][20] = 0
     end
+
+    -- 5. Find Exit Portal Location (Tile furthest from spawn)
+    local maxDistSq = 0
+    map.portalX, map.portalY = map.spawnX, map.spawnY
+    for y = 1, map.height do
+        for x = 1, map.width do
+            if map.data[y][x] == 0 then
+                local distSq = (x - map.spawnX)^2 + (y - map.spawnY)^2
+                if distSq > maxDistSq then
+                    maxDistSq = distSq
+                    map.portalX, map.portalY = x, y
+                end
+            end
+        end
+    end
     
-    -- 5. Generate procedural floor texture decorations and exposed Wall Edges
+    -- 6. Generate procedural floor texture decorations and exposed Wall Edges
     for y = 1, map.height do
         for x = 1, map.width do
             if map.data[y][x] == 0 then
@@ -294,6 +313,16 @@ function map.draw()
             love.graphics.pop()
         end
     end
+end
+
+function map.getPortalWorldPos()
+    return (map.portalX - 0.5) * map.gridSize, (map.portalY - 0.5) * map.gridSize
+end
+
+function map.isOnPortal(px, py)
+    local tx, ty = map.getPortalWorldPos()
+    local dx, dy = px - tx, py - ty
+    return math.sqrt(dx*dx + dy*dy) < 85
 end
 
 return map

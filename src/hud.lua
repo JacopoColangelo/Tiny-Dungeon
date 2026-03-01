@@ -3,6 +3,7 @@ local hud = {}
 -- Fonts (loaded in hud.load)
 local gothicTitleFont
 local gothicButtonFont
+local gothicSmallFont
 local debugFont
 
 -- UI state
@@ -15,9 +16,18 @@ hud.gameOverButtons = {
 }
 
 function hud.load()
-    gothicTitleFont  = love.graphics.newFont("assets/fonts/Metamorphous-Regular.ttf", 72)
-    gothicButtonFont = love.graphics.newFont("assets/fonts/Metamorphous-Regular.ttf", 22)
+    gothicTitleFont  = love.graphics.newFont("assets/fonts/Metamorphous-Regular.ttf", 64)
+    gothicButtonFont = love.graphics.newFont("assets/fonts/Metamorphous-Regular.ttf", 20)
+    gothicSmallFont  = love.graphics.newFont("assets/fonts/Metamorphous-Regular.ttf", 12)
     debugFont        = love.graphics.newFont(12)
+end
+
+function hud.getFont(name)
+    if name == "title" then return gothicTitleFont
+    elseif name == "button" then return gothicButtonFont
+    elseif name == "small" then return gothicSmallFont
+    elseif name == "debug" then return debugFont
+    end
 end
 
 function hud.keypressed(key)
@@ -51,7 +61,7 @@ function hud.drawHUD(player)
 
     -- Anchor to top-right
     local totalWidth = (player.maxHp - 1) * spacing + size
-    local startX = love.graphics.getWidth() - margin - totalWidth
+    local startX = 1280 - margin - totalWidth
     local startY = margin
 
     for i = 1, player.maxHp do
@@ -83,17 +93,18 @@ function hud.drawHUD(player)
 
         end
     end
+    love.graphics.setBlendMode("alpha")
 end
 
 -- ── Skill Bar ────────────────────────────────────────────────────────────────
 
 function hud.drawSkillBar(player)
-    local w, h = love.graphics.getWidth(), love.graphics.getHeight()
-    local boxSize = 40
-    local barW = boxSize + 16
-    local barH = boxSize + 16
+    local w, h = 1280, 720
+    local boxSize = 36
+    local barW = boxSize + 14
+    local barH = boxSize + 14
     local bx = w/2 - barW/2
-    local by = h - barH - 20
+    local by = h - barH - 18
 
     -- Background Bar (Glassy/Stone)
     love.graphics.setColor(0, 0, 0, 0.4)
@@ -150,13 +161,18 @@ end
 
 -- ── Stone Tablet Button (reusable) ───────────────────────────────────────────
 
-local function drawStoneTablet(x, y, w, h, text, isHover)
+function hud.drawStoneTablet(x, y, w, h, text, isHover, isDisabled)
     -- 1. Heavy Stone Shadow
     love.graphics.setColor(0, 0, 0, 0.6)
     love.graphics.rectangle("fill", x + 5, y + 5, w, h, 2)
 
     -- 2. Tablet Base
-    if isHover then
+    if isDisabled then
+        love.graphics.setColor(0.08, 0.08, 0.08, 0.7)
+        love.graphics.rectangle("fill", x, y, w, h, 2)
+        love.graphics.setLineWidth(1)
+        love.graphics.setColor(0.35, 0.35, 0.33, 0.4)
+    elseif isHover then
         love.graphics.setColor(0.3, 0.28, 0.25, 0.95)
         love.graphics.rectangle("fill", x, y, w, h, 2)
         love.graphics.setLineWidth(2)
@@ -193,7 +209,9 @@ local function drawStoneTablet(x, y, w, h, text, isHover)
     love.graphics.print(text, tx + 1, ty + 1)
 
     -- Text Face (Reduced opacity for "etched" look)
-    if isHover then 
+    if isDisabled then
+        love.graphics.setColor(0.4, 0.4, 0.38, 0.4) -- Dim when disabled
+    elseif isHover then 
         love.graphics.setColor(1, 1, 0.9, 0.85) -- Brighter on hover
     else 
         love.graphics.setColor(0.85, 0.85, 0.8, 0.65) -- Faded ivory idle
@@ -203,9 +221,9 @@ end
 
 -- ── Game Over Screen ─────────────────────────────────────────────────────────
 
-function hud.drawGameOver()
-    local w, h = love.graphics.getWidth(), love.graphics.getHeight()
-    local mx, my = love.mouse.getPosition()
+function hud.drawGameOver(mx, my)
+    local w, h = 1280, 720
+    -- mx, my should be virtual coordinates from main.lua
 
     -- 1. Deep Abyssal Veil
     love.graphics.setBlendMode("alpha")
@@ -217,7 +235,7 @@ function hud.drawGameOver()
     local title = "You have died"
     local tw = gothicTitleFont:getWidth(title)
     local th = gothicTitleFont:getHeight()
-    local tx, ty = w/2 - tw/2, h/2 - 140
+    local tx, ty = w/2 - tw/2, h/2 - 110
 
     -- Title Shadow (Blood Red)
     love.graphics.setColor(0.3, 0, 0, 0.8)
@@ -256,11 +274,17 @@ function hud.drawGameOver()
     drawKnot(w/2 + lineW/2, lineY)
     drawKnot(w/2, lineY)
 
+    -- Stone Tablet sizes for Game Over
+    hud.gameOverButtons.respawn.w = 200
+    hud.gameOverButtons.respawn.h = 50
+    hud.gameOverButtons.quit.w = 200
+    hud.gameOverButtons.quit.h = 50
+
     -- 4. Chipped Stone Buttons
-    local btnSpacing = 50
+    local btnSpacing = 40
     local totalW = hud.gameOverButtons.respawn.w + hud.gameOverButtons.quit.w + btnSpacing
     local startX_btns = w/2 - totalW/2
-    local btnY = lineY + 60
+    local btnY = lineY + 50
 
     local btns = {
         {id = "respawn", text = "Respawn"},
@@ -275,7 +299,7 @@ function hud.drawGameOver()
         local isHover = mx >= btnObj.x and mx <= btnObj.x + btnObj.w and
                         my >= btnObj.y and my <= btnObj.y + btnObj.h
 
-        drawStoneTablet(btnObj.x, btnObj.y, btnObj.w, btnObj.h, b.text, isHover)
+        hud.drawStoneTablet(btnObj.x, btnObj.y, btnObj.w, btnObj.h, b.text, isHover, false)
     end
 
     -- Reset to default font

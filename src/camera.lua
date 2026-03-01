@@ -11,8 +11,8 @@ function camera.addShake(intensity, duration)
 end
 
 function camera.follow(player, dt)
-    local targetX = (player.x + player.size/2) - love.graphics.getWidth()/2
-    local targetY = (player.y + player.size/2) - love.graphics.getHeight()/2
+    local targetX = player.x + player.size/2 - 1280/2
+    local targetY = player.y + player.size/2 - 720/2
     camera.x = camera.x + (targetX - camera.x) * camera.lerpSpeed * dt
     camera.y = camera.y + (targetY - camera.y) * camera.lerpSpeed * dt
 end
@@ -36,8 +36,8 @@ function camera.getShakeOffset()
 end
 
 function camera.snapTo(player)
-    camera.x = (player.x + player.size/2) - love.graphics.getWidth()/2
-    camera.y = (player.y + player.size/2) - love.graphics.getHeight()/2
+    camera.x = player.x + player.size/2 - 1280/2
+    camera.y = player.y + player.size/2 - 720/2
 end
 
 -- Expose globally so player.lua can reference it for screen feedback
