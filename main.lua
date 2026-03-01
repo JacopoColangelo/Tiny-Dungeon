@@ -275,7 +275,7 @@ function love.draw()
         love.graphics.stencil(drawStencil, "replace", 1)
         love.graphics.setStencilTest("greater", 0)
 
-        local flicker = math.sin(love.timer.getTime() * 6) * 4
+        local flicker = math.sin(love.timer.getTime() * 6) * 15
         local currentTorch = torchSize + flicker
 
         -- Replace blend clears the ambient grey to the pure radial lighting brightness
@@ -284,11 +284,12 @@ function love.draw()
             local radius = currentTorch * (i / 15)
             local fraction = i / 15
             local lerp = 1.0 - fraction
+            local torchIntensity = 1.4
             
             -- Tint light to warm vibrant orange/yellow torch hue, fading perfectly into the 35% light ambient
-            local r = 0.35 + (1.0 - 0.35) * lerp
-            local g = 0.35 + (0.80 - 0.35) * lerp
-            local b = 0.40 + (0.50 - 0.40) * lerp
+            local r = 0.35 + (1.0 - 0.35) * lerp * torchIntensity
+            local g = 0.35 + (0.80 - 0.35) * lerp * torchIntensity
+            local b = 0.40 + (0.50 - 0.40) * lerp * torchIntensity
             
             love.graphics.setColor(r, g, b, 1)
             love.graphics.circle("fill", px, py, radius)
