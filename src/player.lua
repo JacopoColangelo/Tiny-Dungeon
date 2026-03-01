@@ -8,6 +8,8 @@ local player = {
     size = 24,
     hp = 4,
     maxHp = 4,
+    torchSize = 250,
+    shadowPolygon = nil,
     
     -- Audio (Player specific)
     footstepSound = love.audio.newSource("assets/audio/footstep_01.wav", "static"),
