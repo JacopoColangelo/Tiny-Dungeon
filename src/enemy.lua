@@ -348,6 +348,22 @@ function enemy.update(dt, player, map)
             end
         end
     end
+    -- Portal Repulsion
+    local hpx, hpy = map.getPortalWorldPos()
+    if hpx and hpy then
+        for _, e in ipairs(enemy.list) do
+            local dx, dy = e.x - hpx, e.y - hpy
+            local distSq = dx*dx + dy*dy
+            local minDist = (map.portalCollisionRadius or 30) + e.size/2
+            if distSq < minDist * minDist then
+                local dist = math.sqrt(distSq)
+                if dist > 0 then
+                    local push = minDist - dist
+                    e.x, e.y = e.x + (dx / dist) * push, e.y + (dy / dist) * push
+                end
+            end
+        end
+    end
 end
 
 function enemy.draw(player)

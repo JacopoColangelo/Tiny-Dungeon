@@ -366,8 +366,10 @@ function game.draw(canvas, isPaused, vx, vy)
         end
     love.graphics.pop()
 
-    -- 5. Player bloom (additive)
-    lighting.drawBloom(player, camera)
+    -- 2. Emissive Bloom (Additive Overlay)
+    local pWX, pWY = currentMap().getPortalWorldPos()
+    lighting.drawPortalBloom(pWX, pWY, camera)
+    lighting.drawBloom(player, camera) -- Player torch bloom
     
     -- 6. UI Pass
     if portalPromptAlpha > 0 then
@@ -381,7 +383,7 @@ function game.draw(canvas, isPaused, vx, vy)
         local ltw = smallFont:getWidth(label)
         
         local bob = math.sin(love.timer.getTime() * 1.5) * 5
-        local ly = ty - 60 + bob
+        local ly = ty - 80 + bob
         
         love.graphics.setColor(0, 0, 0, 0.8 * portalPromptAlpha)
         love.graphics.print(label, tx - ltw/2 + 2, ly + 2)
@@ -401,7 +403,7 @@ function game.draw(canvas, isPaused, vx, vy)
         local text = "[E] to Interact"
         local tw = smallFont:getWidth(text)
         
-        local py = 600 -- Adjusted bottom pos in 720p space
+        local py = 600
         love.graphics.setColor(0, 0, 0, 0.5 * portalPromptAlpha)
         love.graphics.rectangle("fill", w/2 - tw/2 - 10, py - 5, tw + 20, 26, 4)
         love.graphics.setColor(0.7, 0.9, 1.0, 0.9 * portalPromptAlpha)

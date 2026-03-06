@@ -1,4 +1,5 @@
 local map = {}
+map.isHub = false
 
 map.gridSize = 50 
 map.width = 40    
@@ -6,6 +7,7 @@ map.height = 40
 map.data = {}
 map.spawnX = 0
 map.spawnY = 0
+map.portalCollisionRadius = 15
 
 function map.generate(seed)
     if seed then

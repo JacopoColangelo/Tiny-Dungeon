@@ -4,6 +4,7 @@
 local shadows = require("src.shadows")
 
 local hub = {}
+hub.isHub = true
 
 hub.gridSize = 50
 hub.width = 24
@@ -19,6 +20,14 @@ hub.portalX = 12
 hub.portalY = 8
 hub.portalRadius = 60
 hub.portalParticles = {}
+hub.portalBaseImg = nil
+hub.portalFrames = {}
+hub.portalFrame = 1
+hub.portalTimer = 0
+hub.portalFPS = 8
+hub.portalCollisionRadius = 15
+hub.tiles = {}
+hub.tileData = {}
 
 -- ── Color Palette (withered grove / gothic stone) ────────────────────────────
 
@@ -120,17 +129,73 @@ local deadTrees = {
 -- ── Generate ─────────────────────────────────────────────────────────────────
 
 function hub.generate()
-    hub.decorations = {}
-    hub.contours = {}
-    hub.grassList = {}
-
-    -- Copy layout into data
-    for y = 1, hub.height do
-        hub.data[y] = {}
-        for x = 1, hub.width do
-            hub.data[y][x] = layout[y][x]
+    if not hub.portalBaseImg then
+        hub.portalBaseImg = love.graphics.newImage("assets/sprites/portal_base.png")
+    end
+    if #hub.portalFrames == 0 then
+        for i = 0, 5 do
+            local path = string.format("assets/sprites/rift_spritesheet/%02d_rift_animated.png", i)
+            table.insert(hub.portalFrames, love.graphics.newImage(path))
         end
     end
+    hub.contours = {}
+    hub.grassList = {}
+    hub.tileData = {}
+
+    -- Load tiles if not loaded
+    if #hub.tiles == 0 then
+        for i = 0, 63 do
+            local path = string.format("assets/sprites/grass_tileset/%02d_TX Tileset Grass.png", i)
+            local success, img = pcall(love.graphics.newImage, path)
+            if success then
+                hub.tiles[i] = img
+            end
+        end
+    end
+
+    -- Copy layout into data and initialize tileData
+    for y = 1, hub.height do
+        hub.data[y] = {}
+        hub.tileData[y] = {}
+        for x = 1, hub.width do
+            hub.data[y][x] = layout[y][x]
+            if layout[y][x] == 0 then
+                -- Default to random grass (0-31)
+                hub.tileData[y][x] = love.math.random(0, 31)
+            end
+        end
+    end
+
+    -- Create Slab Path (32-61) from Spawn to Portal
+    -- Simple linear path for now, we can make it "organic" by adding some width/noise
+    local startX, startY = hub.spawnX, hub.spawnY
+    local endX, endY = hub.portalX, hub.portalY
+    
+    local currX, currY = startX, startY
+    while currX ~= endX or currY ~= endY do
+        -- Mark current and immediate neighbors for a thicker path
+        for dy = -1, 1 do
+            for dx = -1, 1 do
+                local nx, ny = currX + dx, currY + dy
+                if hub.tileData[ny] and hub.tileData[ny][nx] then
+                    hub.tileData[ny][nx] = love.math.random(32, 61)
+                end
+            end
+        end
+
+        if currX < endX then currX = currX + 1
+        elseif currX > endX then currX = currX - 1
+        end
+        if currY < endY then currY = currY + 1
+        elseif currY > endY then currY = currY - 1
+        end
+    end
+    -- Mark end point too
+    hub.tileData[endY][endX] = love.math.random(32, 61)
+    if hub.tileData[endY-1] then hub.tileData[endY-1][endX] = love.math.random(32, 61) end
+    if hub.tileData[endY+1] then hub.tileData[endY+1][endX] = love.math.random(32, 61) end
+    if hub.tileData[endY][endX-1] then hub.tileData[endY][endX-1] = love.math.random(32, 61) end
+    if hub.tileData[endY][endX+1] then hub.tileData[endY][endX+1] = love.math.random(32, 61) end
 
     -- Place pillars as walls
     for _, p in ipairs(pillars) do
@@ -141,25 +206,7 @@ function hub.generate()
     for y = 1, hub.height do
         for x = 1, hub.width do
             if hub.data[y][x] == 0 then
-                -- 1. Decals
-                local numDecals = love.math.random(2, 7)
-                for i = 1, numDecals do
-                    local px = (x - 1) * hub.gridSize + love.math.random(4, hub.gridSize - 4)
-                    local py = (y - 1) * hub.gridSize + love.math.random(4, hub.gridSize - 4)
-                    local pr = love.math.random(1, 4)
-                    local roll = love.math.random()
-                    local color
-                    if roll < 0.35 then
-                        color = colors.moss
-                    elseif roll < 0.55 then
-                        color = colors.lichen
-                    elseif roll < 0.75 then
-                        color = colors.deadLeaf
-                    else
-                        color = colors.stone
-                    end
-                    table.insert(hub.decorations, {x = px, y = py, r = pr, color = color})
-                end
+                -- 2. Reactive Grass
 
                 -- 2. Reactive Grass
                 -- Spawn more grass near the edges, less in the direct path
@@ -368,6 +415,13 @@ function hub.updatePortal(dt, map)
         end
         if p.life <= 0 then table.remove(hub.portalParticles, i) end
     end
+
+    -- Update animation frame
+    hub.portalTimer = hub.portalTimer + dt
+    if hub.portalTimer >= 1 / hub.portalFPS then
+        hub.portalTimer = hub.portalTimer - (1 / hub.portalFPS)
+        hub.portalFrame = (hub.portalFrame % 6) + 1
+    end
 end
 
 -- ── Spawn & Portal accessors ─────────────────────────────────────────────────
@@ -396,56 +450,33 @@ end
 function hub.draw()
     local s = hub.gridSize
 
-    -- Draw walls and floors with grove palette
+    -- Draw tiled floors (Grass & Slabs)
     for y = 1, hub.height do
         for x = 1, hub.width do
-            local px, py = (x-1)*s, (y-1)*s
-            if hub.data[y][x] == 1 then
-                love.graphics.setColor(colors.wallBase)
-                love.graphics.rectangle("fill", px, py, s, s)
-            else
-                -- Alternate floor colors for texture
-                if (x + y) % 3 == 0 then
-                    love.graphics.setColor(colors.floorAlt)
-                else
-                    love.graphics.setColor(colors.floorBase)
+            if hub.data[y][x] == 0 then
+                local tIdx = hub.tileData[y][x]
+                local img = hub.tiles[tIdx]
+                if img then
+                    local px, py = (x-1)*s, (y-1)*s
+                    local iw, ih = img:getDimensions()
+                    
+                    -- Original tile colors (no tint)
+                    love.graphics.setColor(1, 1, 1, 1) 
+                    
+                    love.graphics.draw(img, px, py, 0, s/iw, s/ih)
                 end
-                love.graphics.rectangle("fill", px, py, s, s)
             end
         end
     end
     
-    hub.drawGrass()
+    -- Draw portal base sprite
+    if hub.portalBaseImg then
+        local px, py = hub.getPortalWorldPos()
+        love.graphics.setColor(1, 1, 1, 1)
+        love.graphics.draw(hub.portalBaseImg, px, py, 0, 1, 1, hub.portalBaseImg:getWidth()/2, hub.portalBaseImg:getHeight()/2)
+    end
     
-    -- Floor decorations
-    for _, dec in ipairs(hub.decorations) do
-        love.graphics.setColor(dec.color[1], dec.color[2], dec.color[3], dec.color[4] or 1)
-        love.graphics.circle("fill", dec.x, dec.y, dec.r)
-    end
-
-    -- Dead trees (gnarled pixel shapes)
-    for _, tree in ipairs(deadTrees) do
-        local tx = (tree.x - 1) * s + s/2
-        local ty = (tree.y - 1) * s + s/2
-        local sz = tree.size
-
-        -- Trunk
-        love.graphics.setColor(0.12, 0.08, 0.04, 0.8)
-        love.graphics.rectangle("fill", tx - 3*sz, ty - 10*sz, 6*sz, 20*sz)
-
-        -- Branches (angular, dead)
-        love.graphics.setLineWidth(2 * sz)
-        love.graphics.setColor(0.10, 0.07, 0.03, 0.7)
-        love.graphics.line(tx, ty - 5*sz, tx - 12*sz, ty - 18*sz)
-        love.graphics.line(tx, ty - 8*sz, tx + 10*sz, ty - 20*sz)
-        love.graphics.line(tx - 12*sz, ty - 18*sz, tx - 16*sz, ty - 14*sz)
-        love.graphics.line(tx + 10*sz, ty - 20*sz, tx + 14*sz, ty - 17*sz)
-
-        -- Root bumps
-        love.graphics.setColor(0.09, 0.06, 0.03, 0.5)
-        love.graphics.circle("fill", tx - 5*sz, ty + 9*sz, 3*sz)
-        love.graphics.circle("fill", tx + 4*sz, ty + 8*sz, 2.5*sz)
-    end
+    hub.drawGrass()
 
     -- Gothic stone pillars
     for _, p in ipairs(pillars) do
@@ -503,10 +534,10 @@ function hub.drawGrass()
         -- We also shift the hue slightly based on the bend angle to simulate caught light
         local bendAmount = math.abs(grass.currentAngle - grass.baseAngle)
         
-        love.graphics.setColor(0.08, 0.18, 0.08, 1) -- Base dark green
+        love.graphics.setColor(0.20, 0.35, 0.20, 1) -- Lightened base green
         love.graphics.line(grass.x, grass.y, grass.x + (tipX - grass.x)*0.4, grass.y + (tipY - grass.y)*0.4)
         
-        love.graphics.setColor(0.20 + bendAmount*0.1, 0.40 + bendAmount*0.15, 0.15, 1) -- Tip bright green
+        love.graphics.setColor(0.40 + bendAmount*0.1, 0.70 + bendAmount*0.15, 0.30, 1) -- Lightened tip green
         love.graphics.line(grass.x + (tipX - grass.x)*0.4, grass.y + (tipY - grass.y)*0.4, tipX, tipY)
     end
 end
@@ -516,58 +547,55 @@ end
 function hub.drawPortal(px, py, radius)
     px = px or hub.getPortalWorldPos()
     py = py or select(2, hub.getPortalWorldPos())
+    
+    local rPy = py - 25 -- Visual rift offset (only affects drawing, not collision)
     radius = radius or hub.portalRadius
     local t = love.timer.getTime()
 
-    love.graphics.setBlendMode("add")
-
-    -- 1. Outer Ethereal Atmosphere
-    for i = 8, 1, -1 do
-        local pulse = math.sin(t * 1.5 + i * 0.4) * 0.2 + 0.8
-        local rad = radius * (1.2 - i/10) * pulse
-        local a = (1 - i/8) * 0.08
-        love.graphics.setColor(0.5, 0.2, 0.8, a)
-        love.graphics.circle("fill", px, py, rad)
-    end
-
-    -- 2. Pulsing Runic Rings
+    -- 1. Outer Ethereal Atmosphere (Alpha pass for softness)
+    love.graphics.setBlendMode("alpha")
     for i = 4, 1, -1 do
-        local pulse = math.sin(t * 2.5 + i * 0.8) * 0.2 + 0.8
-        local rad = radius * (i / 4) * pulse
-        local a = (1 - i/5) * 0.2
-        love.graphics.setLineWidth(2)
-        love.graphics.setColor(0.6, 0.3, 1.0, a * pulse)
-        love.graphics.circle("line", px, py, rad)
-        -- Cyan accent ring
-        love.graphics.setColor(0.2, 0.8, 1.0, a * 0.5)
-        love.graphics.circle("line", px, py, rad * 0.92)
+        local pulse = math.sin(t * 1.5 + i * 0.4) * 0.2 + 0.8
+        local rad = radius * (1.1 - i/8) * pulse
+        local a = (1 - i/4) * 0.05
+        love.graphics.setColor(0.6, 0.3, 0.9, a) -- Richer purple
+        love.graphics.circle("fill", px, rPy, rad)
     end
 
-    -- 3. Mystical Particles (from updatePortal)
+    -- 2. Animated Rift Sprite - TWO PASSES for Opaque + Glow
+    if hub.portalFrames[hub.portalFrame] then
+        local img = hub.portalFrames[hub.portalFrame]
+        local qw, qh = img:getDimensions()
+        local baseScale = (radius * 0.8) / qw 
+        
+        -- Pass A: Opaque Base (Alpha)
+        love.graphics.setBlendMode("alpha")
+        love.graphics.setColor(1, 1, 1, 1) -- Fully opaque sprite
+        love.graphics.draw(img, px, rPy, 0, baseScale, baseScale, qw/2, qh/2)
+        
+        -- Pass B: Additive Glow (Add)
+        love.graphics.setBlendMode("add")
+        love.graphics.setColor(0.8, 0.4, 1.0, 0.8) -- Bright purple glow
+        love.graphics.draw(img, px, rPy, 0, baseScale * 1.1, baseScale * 1.1, qw/2, qh/2)
+    end
+
+    -- 3. Mystical Particles (Pixelated Squares - Additive)
+    love.graphics.setBlendMode("add")
     for _, p in ipairs(hub.portalParticles) do
         local alpha = (p.life / p.maxLife) * 0.7
-        love.graphics.setColor(0.7, 0.4, 1.0, alpha)
-        love.graphics.rectangle("fill", math.floor(p.x), math.floor(p.y), p.size, p.size)
+        love.graphics.setColor(0.8, 0.4, 1.0, alpha) -- Matching purple
+        love.graphics.rectangle("fill", math.floor(p.x - p.size/2), math.floor(p.y - p.size/2 - 25), p.size, p.size)
         -- Trailing glow
-        love.graphics.setColor(0.4, 0.1, 0.8, alpha * 0.3)
-        love.graphics.rectangle("fill", math.floor(p.x)-2, math.floor(p.y)-2, p.size+4, p.size+4)
+        love.graphics.setColor(0.6, 0.2, 0.9, alpha * 0.3)
+        love.graphics.rectangle("fill", math.floor(p.x - p.size/2 - 1), math.floor(p.y - p.size/2 - 1 - 25), p.size + 2, p.size + 2)
     end
 
-    -- 4. Deep Core Vapor
-    for i = 15, 1, -1 do
-        local r = (radius * 0.5) * (i / 15)
-        local a = (1 - i/15) * 0.15
-        local flicker = math.sin(t * 8) * 0.03
-        love.graphics.setColor(0.2, 0.0, 0.4, a + flicker)
-        love.graphics.circle("fill", px, py, r)
-    end
-
-    -- 5. Radiant Singularity (Center)
+    -- 4. Radiant Singularity (Center - Additive)
     local sPulse = math.sin(t * 6) * 0.4 + 0.6
-    love.graphics.setColor(120/255, 80/255, 255/255, 0.8 * sPulse)
-    love.graphics.circle("fill", px, py, 10 * sPulse)
-    love.graphics.setColor(1, 1, 1, 0.5 * sPulse)
-    love.graphics.circle("fill", px, py, 4)
+    love.graphics.setColor(0.8, 0.5, 1.0, 0.9 * sPulse)
+    love.graphics.rectangle("fill", px - 4 * sPulse, rPy - 4 * sPulse, 8 * sPulse, 8 * sPulse)
+    love.graphics.setColor(1, 1, 1, 0.6 * sPulse)
+    love.graphics.rectangle("fill", px - 1.5, rPy - 1.5, 3, 3)
 
     love.graphics.setBlendMode("alpha")
 end

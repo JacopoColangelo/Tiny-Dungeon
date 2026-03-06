@@ -145,6 +145,26 @@ function player.update(dt, map)
             player.y = player.y - moveY
         end
 
+        -- Portal Collision (Circular)
+        local hpx, hpy = map.getPortalWorldPos()
+        if hpx and hpy then
+            local p_center_x, p_center_y = player.x + player.size/2, player.y + player.size/2
+            local dx, dy = p_center_x - hpx, p_center_y - hpy
+            local distSq = dx*dx + dy*dy
+            local minDist = (map.portalCollisionRadius or 30) + player.size/2
+            if distSq < minDist * minDist then
+                local dist = math.sqrt(distSq)
+                if dist > 0 then
+                    local push = minDist - dist
+                    player.x = player.x + (dx / dist) * push
+                    player.y = player.y + (dy / dist) * push
+                else
+                    -- Exactly on top? Push slightly in any direction
+                    player.y = player.y + 1
+                end
+            end
+        end
+
         player.lastX = oldX
         player.lastY = oldY
 

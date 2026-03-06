@@ -52,9 +52,9 @@ function lighting.drawLightMask(screenCanvas, player, camera, sx, sy, portalX, p
 
         -- Replace blend clears the ambient grey to the pure radial lighting brightness
         love.graphics.setBlendMode("replace")
-        for i = 15, 1, -1 do
-            local radius = currentTorch * (i / 15)
-            local fraction = i / 15
+        for i = 50, 1, -1 do
+            local radius = currentTorch * (i / 50)
+            local fraction = i / 50
             local lerp = 1.0 - fraction
             local torchIntensity = 1.4
 
@@ -125,14 +125,14 @@ function lighting.drawLightMask(screenCanvas, player, camera, sx, sy, portalX, p
 
             love.graphics.setBlendMode("add")
             local pRadius = 320 -- Much stronger, larger glow
-            for i = 35, 1, -1 do
-                local radius = pRadius * (i / 35)
-                local lerp = 1.0 - i / 35
+            for i = 120, 1, -1 do
+                local radius = pRadius * (i / 120)
+                local lerp = 1.0 - i / 120
                 local pIntensity = lighting.portalIntensity
 
-                local r = 0.5 * lerp * pIntensity
-                local g = 0.2 * lerp * pIntensity
-                local b = 0.9 * lerp * pIntensity
+                local r = 0.2 * lerp * pIntensity -- Less deep purple
+                local g = 0.02 * lerp * pIntensity -- Adding cyan/green
+                local b = 0.3 * lerp * pIntensity -- Bright blue
 
                 love.graphics.setColor(r, g, b, 1)
                 love.graphics.circle("fill", portalX, portalY, radius)
@@ -149,9 +149,9 @@ function lighting.drawLightMask(screenCanvas, player, camera, sx, sy, portalX, p
     love.graphics.clear(0, 0, 0, 0)
     love.graphics.setShader(blurShader)
 
-    -- 12.0 is the blur radius strength (scaled for 720p)
+    -- 20.0 is the blur radius strength (scaled for 720p)
     blurShader:send("direction", {1.0 / 1280, 0.0})
-    blurShader:send("radius", 12.0)
+    blurShader:send("radius", 20.0)
     love.graphics.setColor(1, 1, 1, 1)
     love.graphics.draw(lightCanvas)
 
@@ -161,7 +161,7 @@ function lighting.drawLightMask(screenCanvas, player, camera, sx, sy, portalX, p
     love.graphics.setCanvas(screenCanvas)
     love.graphics.setShader(blurShader)
     blurShader:send("direction", {0.0, 1.0 / 720})
-    blurShader:send("radius", 12.0)
+    blurShader:send("radius", 20.0)
 
     love.graphics.setBlendMode("multiply", "premultiplied")
     love.graphics.setColor(1, 1, 1, 1)
@@ -189,7 +189,32 @@ function lighting.drawBloom(player, camera)
     end
     -- Solid white hot spark at center
     love.graphics.setColor(1, 1, 0.8, 0.8)
-    love.graphics.circle("fill", px, py, 6)
+    love.graphics.setBlendMode("alpha")
+    love.graphics.pop()
+end
+
+function lighting.drawPortalBloom(portalX, portalY, camera)
+    if not portalX or not portalY then return end
+    
+    love.graphics.push()
+    love.graphics.translate(-math.floor(camera.x), -math.floor(camera.y))
+    love.graphics.setBlendMode("add")
+
+    -- Mystical cyan/purple bloom
+    for i = 150, 1, -1 do
+        local r = 620 * (i / 150)
+        local a = (1 - (i / 150)) * 0.01
+        -- Cyan to purple gradient
+        love.graphics.setColor(0.5, 0.5, 1, a)
+        love.graphics.circle("fill", portalX, portalY, r)
+        
+        love.graphics.setColor(0.7, 0.4, 0.9, a * 0.5)
+        love.graphics.circle("fill", portalX, portalY, r * 0.1)
+    end
+    
+    -- Bright core
+    love.graphics.setColor(0.8, 0.9, 1.0, 0.7)
+    love.graphics.circle("fill", portalX, portalY, 1)
 
     love.graphics.setBlendMode("alpha")
     love.graphics.pop()
