@@ -26,26 +26,25 @@ hub.portalFrame = 1
 hub.portalTimer = 0
 hub.portalFPS = 8
 hub.portalCollisionRadius = 15
-hub.tiles = {}
-hub.tileData = {}
+hub.portalCollisionRadius = 15
 
 -- ── Color Palette (withered grove / gothic stone) ────────────────────────────
 
 local colors = {
-    -- Floors (Lush Forest Camp)
+    -- Floors (brighter to catch multiply lighting properly)
     floorBase     = {0.15, 0.25, 0.12},      -- vibrant mossy green
     floorAlt      = {0.18, 0.18, 0.10},      -- warm earthy dirt
     -- Walls
-    wallBase      = {0.05, 0.08, 0.04},      -- very dark forest green
+    wallBase      = {0.06, 0.07, 0.05},      -- deep dark green-black
     -- Decorations
     moss          = {0.20, 0.35, 0.15, 0.8}, -- bright green moss patches
     lichen        = {0.25, 0.22, 0.10, 0.6}, -- warm yellow lichen
     deadLeaf      = {0.30, 0.15, 0.08, 0.8}, -- vibrant autumn leaves
     stone         = {0.22, 0.20, 0.18, 0.6}, -- campsite stones
     -- Contour walls
-    contourDark   = {0.04, 0.07, 0.03, 1},
-    contourLight  = {0.35, 0.45, 0.28, 1},   -- lush highlights
-    contourAccent = {0.45, 0.55, 0.35, 1},
+    contourDark   = {0.05, 0.06, 0.04, 1},
+    contourLight  = {0.45, 0.48, 0.42, 1},   -- much brighter for highlights
+    contourAccent = {0.55, 0.58, 0.52, 1},
 }
 
 -- ── Hand-Crafted Layout ──────────────────────────────────────────────────────
@@ -129,9 +128,6 @@ local deadTrees = {
 -- ── Generate ─────────────────────────────────────────────────────────────────
 
 function hub.generate()
-    if not hub.portalBaseImg then
-        hub.portalBaseImg = love.graphics.newImage("assets/sprites/portal_base.png")
-    end
     if #hub.portalFrames == 0 then
         for i = 0, 5 do
             local path = string.format("assets/sprites/rift_spritesheet/%02d_rift_animated.png", i)
@@ -140,62 +136,14 @@ function hub.generate()
     end
     hub.contours = {}
     hub.grassList = {}
-    hub.tileData = {}
 
-    -- Load tiles if not loaded
-    if #hub.tiles == 0 then
-        for i = 0, 63 do
-            local path = string.format("assets/sprites/grass_tileset/%02d_TX Tileset Grass.png", i)
-            local success, img = pcall(love.graphics.newImage, path)
-            if success then
-                hub.tiles[i] = img
-            end
-        end
-    end
-
-    -- Copy layout into data and initialize tileData
+    -- Copy layout into data
     for y = 1, hub.height do
         hub.data[y] = {}
-        hub.tileData[y] = {}
         for x = 1, hub.width do
             hub.data[y][x] = layout[y][x]
-            if layout[y][x] == 0 then
-                -- Default to random grass (0-31)
-                hub.tileData[y][x] = love.math.random(0, 31)
-            end
         end
     end
-
-    -- Create Slab Path (32-61) from Spawn to Portal
-    -- Simple linear path for now, we can make it "organic" by adding some width/noise
-    local startX, startY = hub.spawnX, hub.spawnY
-    local endX, endY = hub.portalX, hub.portalY
-    
-    local currX, currY = startX, startY
-    while currX ~= endX or currY ~= endY do
-        -- Mark current and immediate neighbors for a thicker path
-        for dy = -1, 1 do
-            for dx = -1, 1 do
-                local nx, ny = currX + dx, currY + dy
-                if hub.tileData[ny] and hub.tileData[ny][nx] then
-                    hub.tileData[ny][nx] = love.math.random(32, 61)
-                end
-            end
-        end
-
-        if currX < endX then currX = currX + 1
-        elseif currX > endX then currX = currX - 1
-        end
-        if currY < endY then currY = currY + 1
-        elseif currY > endY then currY = currY - 1
-        end
-    end
-    -- Mark end point too
-    hub.tileData[endY][endX] = love.math.random(32, 61)
-    if hub.tileData[endY-1] then hub.tileData[endY-1][endX] = love.math.random(32, 61) end
-    if hub.tileData[endY+1] then hub.tileData[endY+1][endX] = love.math.random(32, 61) end
-    if hub.tileData[endY][endX-1] then hub.tileData[endY][endX-1] = love.math.random(32, 61) end
-    if hub.tileData[endY][endX+1] then hub.tileData[endY][endX+1] = love.math.random(32, 61) end
 
     -- Place pillars as walls
     for _, p in ipairs(pillars) do
@@ -206,7 +154,25 @@ function hub.generate()
     for y = 1, hub.height do
         for x = 1, hub.width do
             if hub.data[y][x] == 0 then
-                -- 2. Reactive Grass
+                -- 1. Decals (moss, lichen, dead leaves, pebbles)
+                local numDecals = love.math.random(2, 7)
+                for i = 1, numDecals do
+                    local px = (x - 1) * hub.gridSize + love.math.random(4, hub.gridSize - 4)
+                    local py = (y - 1) * hub.gridSize + love.math.random(4, hub.gridSize - 4)
+                    local pr = love.math.random(1, 4)
+                    local roll = love.math.random()
+                    local color
+                    if roll < 0.35 then
+                        color = colors.moss
+                    elseif roll < 0.55 then
+                        color = colors.lichen
+                    elseif roll < 0.75 then
+                        color = colors.deadLeaf
+                    else
+                        color = colors.stone
+                    end
+                    table.insert(hub.decorations, {x = px, y = py, r = pr, color = color})
+                end
 
                 -- 2. Reactive Grass
                 -- Spawn more grass near the edges, less in the direct path
@@ -450,30 +416,26 @@ end
 function hub.draw()
     local s = hub.gridSize
 
-    -- Draw tiled floors (Grass & Slabs)
+    -- Draw walls and floors with grove palette
     for y = 1, hub.height do
         for x = 1, hub.width do
-            if hub.data[y][x] == 0 then
-                local tIdx = hub.tileData[y][x]
-                local img = hub.tiles[tIdx]
-                if img then
-                    local px, py = (x-1)*s, (y-1)*s
-                    local iw, ih = img:getDimensions()
-                    
-                    -- Original tile colors (no tint)
-                    love.graphics.setColor(1, 1, 1, 1) 
-                    
-                    love.graphics.draw(img, px, py, 0, s/iw, s/ih)
-                end
+            local px, py = (x-1)*s, (y-1)*s
+            if hub.data[y][x] == 1 then
+                love.graphics.setColor(colors.wallBase)
+                love.graphics.rectangle("fill", px, py, s, s)
+            else
+                -- Alternate floor colors for texture
+                -- Use single bright floor color
+                love.graphics.setColor(colors.floorBase)
+                love.graphics.rectangle("fill", px, py, s, s)
             end
         end
     end
-    
-    -- Draw portal base sprite
-    if hub.portalBaseImg then
-        local px, py = hub.getPortalWorldPos()
-        love.graphics.setColor(1, 1, 1, 1)
-        love.graphics.draw(hub.portalBaseImg, px, py, 0, 1, 1, hub.portalBaseImg:getWidth()/2, hub.portalBaseImg:getHeight()/2)
+
+    -- Floor decorations
+    for _, dec in ipairs(hub.decorations) do
+        love.graphics.setColor(dec.color[1], dec.color[2], dec.color[3], dec.color[4] or 1)
+        love.graphics.circle("fill", dec.x, dec.y, dec.r)
     end
     
     hub.drawGrass()
@@ -534,10 +496,10 @@ function hub.drawGrass()
         -- We also shift the hue slightly based on the bend angle to simulate caught light
         local bendAmount = math.abs(grass.currentAngle - grass.baseAngle)
         
-        love.graphics.setColor(0.20, 0.35, 0.20, 1) -- Lightened base green
+        love.graphics.setColor(0.08, 0.18, 0.08, 1) -- Base dark green
         love.graphics.line(grass.x, grass.y, grass.x + (tipX - grass.x)*0.4, grass.y + (tipY - grass.y)*0.4)
         
-        love.graphics.setColor(0.40 + bendAmount*0.1, 0.70 + bendAmount*0.15, 0.30, 1) -- Lightened tip green
+        love.graphics.setColor(0.20 + bendAmount*0.1, 0.40 + bendAmount*0.15, 0.15, 1) -- Tip bright green
         love.graphics.line(grass.x + (tipX - grass.x)*0.4, grass.y + (tipY - grass.y)*0.4, tipX, tipY)
     end
 end
