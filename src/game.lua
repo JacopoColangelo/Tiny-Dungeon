@@ -167,6 +167,8 @@ function game.update(dt, vx, vy, isPaused)
     else
         hub.updatePortal(dt, hub)
         hub.updateGrass(dt, player)
+        hub.updateRain(dt, camera.x, camera.y)
+        hub.updateClouds(dt, player)
         if enemy.showSlots then
             -- Update slots in Hub if requested for debug visibility
             enemy.updateSlots(player.x + player.size/2, player.y + player.size/2, currentMap())
@@ -297,7 +299,8 @@ function game.draw(canvas, isPaused, vx, vy)
         love.graphics.translate(-math.floor(camera.x) + sx, -math.floor(camera.y) + sy)
         
         if levelType == "hub" then
-            hub.draw()
+            hub.draw(camera)
+            hub.drawRain(camera, false)   -- base rain pass (before lighting)
             -- Draw portal to objectCanvas for highlight
             love.graphics.setCanvas(objectCanvas)
             love.graphics.clear(0,0,0,0)
@@ -370,6 +373,9 @@ function game.draw(canvas, isPaused, vx, vy)
     local pWX, pWY = currentMap().getPortalWorldPos()
     lighting.drawPortalBloom(pWX, pWY, camera)
     lighting.drawBloom(player, camera) -- Player torch bloom
+    if levelType == "hub" then
+        hub.drawRain(camera, true)  -- additive glint pass (after lighting)
+    end
     
     -- 6. UI Pass
     if portalPromptAlpha > 0 then
