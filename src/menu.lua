@@ -174,15 +174,45 @@ function menu.draw(screenCanvas, vx, vy)
     love.graphics.setFont(titleFont)
     local title = "Tiny Dungeon"
     local tw = titleFont:getWidth(title)
+    local th = titleFont:getHeight()
     local tx = w/2 - tw/2
     local ty = h * 0.15
 
-    -- Title shadow
-    love.graphics.setColor(0.25, 0, 0, 0.9)
+    -- Title shadow (Deep Cold Slate)
+    love.graphics.setColor(0.05, 0.05, 0.08, 1)
     love.graphics.print(title, tx + 3, ty + 3)
-    -- Title face
-    love.graphics.setColor(0.6, 0.12, 0.08, 1)
+    
+    -- Title face (Original Crimson)
+    local baseColor = {0.6, 0.12, 0.08, 1}
+    love.graphics.setColor(baseColor)
     love.graphics.print(title, tx, ty)
+
+    -- --- ANIMATION: Ultra-Soft Highlight Sweep (Refined: Softer & Slower) ---
+    local time = love.timer.getTime()
+    local period = 7.0 -- Frequency
+    local dashTime = time % period
+    local sweepDuration = 5.0 -- Even slower sweep
+    
+    if dashTime < sweepDuration then
+        local p = dashTime / sweepDuration
+        local totalRange = tw + 1000
+        local centerX = tx - 500 + p * totalRange
+        
+        -- High-fidelity 3-layer soft-edge shine
+        local layers = {
+            {w = 800, a = 0.02}, -- Extremely broad base
+            {w = 400, a = 0.03}, -- Middle diffusion
+            {w = 150, a = 0.05}  -- Core glint
+        }
+        
+        for _, l in ipairs(layers) do
+            local sweepX = centerX - l.w/2
+            love.graphics.setScissor(sweepX, ty, l.w, th)
+            love.graphics.setColor(1, 1, 1, l.a) 
+            love.graphics.print(title, tx, ty)
+        end
+        love.graphics.setScissor()
+    end
 
     -- Ornate divider
     local divY = ty + titleFont:getHeight() + 15
@@ -190,7 +220,7 @@ function menu.draw(screenCanvas, vx, vy)
     local ivory = {0.85, 0.85, 0.8}
 
     love.graphics.setBlendMode("add")
-    love.graphics.setColor(0.3, 0.08, 0.05, 0.08)
+    love.graphics.setColor(0.2, 0.2, 0.25, 0.1) -- Neutral glow
     love.graphics.ellipse("fill", w/2, divY, divW/2, 8)
     love.graphics.setBlendMode("alpha")
 
