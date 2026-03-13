@@ -8,7 +8,7 @@ local lighting = require("src.lighting")
 local hub      = require("src.hub")
 local pause    = require("src.pause")
 local soul     = require("src.soul")
-
+local storage  = require("src.storage")
 local game = {}
 
 -- Rendering references (assigned in refreshCanvas or passed in draw)
@@ -24,6 +24,7 @@ local hitStopTimer = 0
 local clickEffect = { x = 0, y = 0, timer = 0, lifetime = 0.3, active = false }
 
 local portalPromptAlpha = 0
+local shrinePromptAlpha = 0
 local portalShadowPolygon = nil
 
 function _G.hitStop(duration)
@@ -210,6 +211,16 @@ function game.update(dt, vx, vy, isPaused)
         portalPromptAlpha = math.max(0, portalPromptAlpha - dt * 4)
     end
 
+    if levelType == "hub" then
+        if hub.isOnSaveShrine(px, py) then
+            shrinePromptAlpha = math.min(1, shrinePromptAlpha + dt * 4)
+        else
+            shrinePromptAlpha = math.max(0, shrinePromptAlpha - dt * 4)
+        end
+    else
+        shrinePromptAlpha = 0
+    end
+
     -- Death check (dungeon only)
     if levelType == "dungeon" then
             if player.hp <= 0 and gameState == "play" then
@@ -245,6 +256,9 @@ function game.keypressed(key)
                 player.soulsRun = 0
                 game.loadHub()
                 return
+            elseif levelType == "hub" and hub.isOnSaveShrine(px, py) then
+                game.saveGame()
+                return
             end
         end
 
@@ -259,8 +273,9 @@ function game.keypressed(key)
         hud.keypressed(key)
     elseif gameState == "gameover" then
         if key == "r" then game.loadHub() end  -- respawn in hub
-        if key == "q" then love.event.quit() end
+        if key == "q" then return "menu" end
     end
+    return nil
 end
 
 function game.mousepressed(vx, vy, button, isPaused)
@@ -287,9 +302,10 @@ function game.mousepressed(vx, vy, button, isPaused)
             game.loadHub()  -- respawn in hub
         elseif vx >= btns.quit.x and vx <= btns.quit.x + btns.quit.w and
                vy >= btns.quit.y and vy <= btns.quit.y + btns.quit.h then
-            love.event.quit()
+            return "menu"
         end
     end
+    return nil
 end
 
 -- ── Draw ─────────────────────────────────────────────────────────────────────
@@ -430,12 +446,104 @@ function game.draw(canvas, isPaused, vx, vy)
         hud.drawGameOver(vx, vy)
     end
 
+    -- Draw Shrine Prompt
+    if shrinePromptAlpha > 0 then
+        local tx_world, ty_world = hub.getSaveShrineWorldPos()
+        local tx = tx_world - math.floor(camera.x) + sx
+        local ty = ty_world - math.floor(camera.y) + sy
+        
+        local label = "Save Shrine"
+        local smallFont = hud.getFont("small")
+        love.graphics.setFont(smallFont)
+        local ltw = smallFont:getWidth(label)
+        
+        local bob = math.sin(love.timer.getTime() * 1.5) * 5
+        local ly = ty - 60 + bob
+        
+        love.graphics.setColor(0, 0, 0, 0.8 * shrinePromptAlpha)
+        love.graphics.print(label, tx - ltw/2 + 2, ly + 2)
+        love.graphics.setColor(0.4, 0.8, 1.0, 1.0 * shrinePromptAlpha)
+        love.graphics.print(label, tx - ltw/2, ly)
+
+        -- Universal interaction hint
+        local text = "[E] to Save"
+        local tw = smallFont:getWidth(text)
+        local py_hint = 600
+        love.graphics.setColor(0, 0, 0, 0.5 * shrinePromptAlpha)
+        love.graphics.rectangle("fill", w/2 - tw/2 - 10, py_hint - 5, tw + 20, 26, 4)
+        love.graphics.setColor(0.7, 0.9, 1.0, 0.9 * shrinePromptAlpha)
+        love.graphics.print(text, w/2 - tw/2, py_hint)
+    end
+
     -- ── NEW: Pause Overlay pass
     if isPaused then
         pause.drawOverlay(vx, vy)
     end
 
     love.graphics.setCanvas()
+end
+
+function game.newGame()
+    player.soulsTotal = 0
+    player.soulsRun = 0
+    game.loadHub()
+    print("New Game Started!")
+end
+
+function game.saveGame()
+    local saveData = {
+        soulsTotal = player.soulsTotal,
+        playerX = player.x,
+        playerY = player.y,
+        level = levelType
+    }
+    local success, msg = storage.save(saveData)
+    if success then
+        print("Game Saved!")
+        -- Maybe add a visual indicator in HUD later
+    else
+        print("Save failed: " .. tostring(msg))
+    end
+end
+
+function game.loadGame()
+    local data = storage.load()
+    if data then
+        player.soulsTotal = data.soulsTotal or 0
+        player.soulsRun = 0
+        player.x = data.playerX or player.x
+        player.y = data.playerY or player.y
+        levelType = data.level or "hub"
+        
+        if levelType == "hub" then
+            game.loadHub()
+            -- Override position after loadHub defaults it
+            player.x = data.playerX
+            player.y = data.playerY
+        else
+            -- We don't support saving inside dungeons yet in this implementation
+            -- but if we did, we'd handle it here.
+            game.loadHub() 
+        end
+        print("Game Loaded!")
+    end
+end
+
+function game.newGame()
+    -- Reset Player stats
+    player.soulsTotal = 0
+    player.soulsRun = 0
+    player.hp = player.maxHp
+    
+    -- Reset Session/UI state
+    hitStopTimer = 0
+    clickEffect.active = false
+    portalPromptAlpha = 0
+    shrinePromptAlpha = 0
+    
+    -- Switch to Hub
+    game.loadHub()
+    print("New Game Started!")
 end
 
 return game

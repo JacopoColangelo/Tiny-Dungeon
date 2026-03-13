@@ -27,6 +27,11 @@ hub.portalTimer = 0
 hub.portalFPS = 8
 hub.portalCollisionRadius = 15
 
+-- Save Shrine position (in the grove area)
+hub.saveShrineX = 7
+hub.saveShrineY = 17
+hub.saveShrineRadius = 40
+
 -- ── Rain state ───────────────────────────────────────────────────────────────
 hub.rain = {}
 hub.RAIN_COUNT = 280          -- total persistent drops
@@ -605,6 +610,19 @@ function hub.isOnPortal(px, py)
     return (dx*dx + dy*dy) < (120 * 120)
 end
 
+function hub.getSaveShrineWorldPos()
+    local x = (hub.saveShrineX - 1) * hub.gridSize + hub.gridSize/2
+    local y = (hub.saveShrineY - 1) * hub.gridSize + hub.gridSize/2
+    return x, y
+end
+
+function hub.isOnSaveShrine(px, py)
+    local sx, sy = hub.getSaveShrineWorldPos()
+    local dx = px - sx
+    local dy = py - sy
+    return (dx*dx + dy*dy) < (80 * 80)
+end
+
 -- ── Draw ─────────────────────────────────────────────────────────────────────
 
 function hub.draw(camera)
@@ -666,6 +684,9 @@ function hub.draw(camera)
         love.graphics.setColor(leaf.color)
         love.graphics.rectangle("fill", lx, ly, leaf.size, leaf.size)
     end
+
+    -- Draw Save Shrine
+    hub.drawSaveShrine()
     
     -- Finally, apply cloud shadow shader directly to the floor environment layer
     if camera and hub.cloudShader then
@@ -673,6 +694,36 @@ function hub.draw(camera)
     end
     
     -- Contour lines are replaced by the perimeter canopy. End draw.
+end
+
+function hub.drawSaveShrine()
+    local tx, ty = hub.getSaveShrineWorldPos()
+    local t = love.timer.getTime()
+    
+    -- Glow
+    love.graphics.setBlendMode("add")
+    for i = 3, 1, -1 do
+        local pulse = math.sin(t * 2) * 0.1 + 0.9
+        local r = 30 * (i/3) * pulse
+        love.graphics.setColor(0.3, 0.6, 1.0, 0.1 * (1 - i/3))
+        love.graphics.circle("fill", tx, ty, r)
+    end
+    love.graphics.setBlendMode("alpha")
+    
+    -- Base Stone
+    love.graphics.setColor(0.2, 0.2, 0.25, 1)
+    love.graphics.rectangle("fill", tx - 12, ty - 4, 24, 8, 2)
+    
+    -- Floating Gem/Relic
+    local floatY = ty - 25 + math.sin(t * 3) * 5
+    love.graphics.setColor(0.4, 0.8, 1.0, 1)
+    love.graphics.rectangle("fill", tx - 4, floatY - 4, 8, 8, 2)
+    
+    -- Gem Glow
+    love.graphics.setBlendMode("add")
+    love.graphics.setColor(0.4, 0.8, 1.0, 0.4)
+    love.graphics.circle("fill", tx, floatY, 12 + math.sin(t * 5) * 2)
+    love.graphics.setBlendMode("alpha")
 end
 
 function hub.drawGrass()

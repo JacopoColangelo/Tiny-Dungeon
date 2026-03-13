@@ -22,11 +22,23 @@ local function spawnParticle(w, h)
     }
 end
 
+-- ── Popup State ──────────────────────────────────────────────────────────────
+
+local popup = {
+    visible = false,
+    text = "Start a new game?\nThis will reset your current progress.",
+    buttons = {
+        {id = "yes", text = "YES", w = 120, h = 40},
+        {id = "no",  text = "NO",  w = 120, h = 40}
+    },
+    rects = {} -- screen hitboxes for popup buttons
+}
+
 -- ── Button Definitions ───────────────────────────────────────────────────────
 
 local buttons = {
+    {id = "loadgame", text = "Continue",  w = 240, h = 48, disabled = false},
     {id = "newgame",  text = "New Game",  w = 240, h = 48, disabled = false},
-    {id = "loadgame", text = "Load Game", w = 240, h = 48, disabled = true},
     {id = "options",  text = "Options",   w = 240, h = 48, disabled = false},
     {id = "quit",     text = "Quit",      w = 240, h = 48, disabled = false},
 }
@@ -39,15 +51,33 @@ local pendingAction = nil
 
 -- ── Public API ───────────────────────────────────────────────────────────────
 
-function menu.load()
+function menu.load(hasSave)
     -- Seed initial particles
     local w, h = 1280, 720
-    for i = 1, maxParticles do
-        local p = spawnParticle(w, h)
-        p.y = math.random() * h          -- scatter vertically
-        p.life = math.random() * p.life  -- stagger lifetimes
-        p.maxLife = p.life
-        table.insert(particles, p)
+    if #particles == 0 then
+        for i = 1, maxParticles do
+            local p = spawnParticle(w, h)
+            p.y = math.random() * h          -- scatter vertically
+            p.life = math.random() * p.life  -- stagger lifetimes
+            p.maxLife = p.life
+            table.insert(particles, p)
+        end
+    end
+
+    -- Define buttons based on save state
+    if hasSave then
+        buttons = {
+            {id = "loadgame", text = "Continue",  w = 240, h = 48, disabled = false},
+            {id = "newgame",  text = "New Game",  w = 240, h = 48, disabled = false},
+            {id = "options",  text = "Options",   w = 240, h = 48, disabled = false},
+            {id = "quit",     text = "Quit",      w = 240, h = 48, disabled = false},
+        }
+    else
+        buttons = {
+            {id = "newgame",  text = "New Game",  w = 240, h = 48, disabled = false},
+            {id = "options",  text = "Options",   w = 240, h = 48, disabled = false},
+            {id = "quit",     text = "Quit",      w = 240, h = 48, disabled = false},
+        }
     end
 end
 
@@ -73,10 +103,46 @@ function menu.update(dt, vx, vy)
         table.insert(particles, p)
     end
 
-    return pendingAction
+    if pendingAction then
+        local action = pendingAction
+        
+        -- Logic: If they click "newgame" but a save exists, show the popup.
+        if action == "newgame" and not popup.visible then
+            local hasSave = false
+            for _, b in ipairs(buttons) do
+                if b.id == "loadgame" then hasSave = true break end
+            end
+            
+            if hasSave then
+                popup.visible = true
+                pendingAction = nil
+                return nil
+            end
+        end
+
+        -- Handle popup buttons
+        if popup.visible then
+            if action == "yes" then
+                popup.visible = false
+                pendingAction = nil
+                return "newgame"
+            elseif action == "no" then
+                popup.visible = false
+                pendingAction = nil
+                return nil
+            end
+            -- Block other actions while popup is visible
+            pendingAction = nil
+            return nil
+        end
+
+        return action
+    end
+
+    return nil
 end
 
-function menu.draw(screenCanvas)
+function menu.draw(screenCanvas, vx, vy)
     local w, h = 1280, 720
 
     love.graphics.setCanvas(screenCanvas)
@@ -110,12 +176,6 @@ function menu.draw(screenCanvas)
     local tw = titleFont:getWidth(title)
     local tx = w/2 - tw/2
     local ty = h * 0.15
-
-    -- Title glow
-    love.graphics.setBlendMode("add")
-    love.graphics.setColor(0.4, 0.08, 0.02, 0.15)
-    love.graphics.ellipse("fill", w/2, ty + 40, tw/2 + 40, 50)
-    love.graphics.setBlendMode("alpha")
 
     -- Title shadow
     love.graphics.setColor(0.25, 0, 0, 0.9)
@@ -168,15 +228,103 @@ function menu.draw(screenCanvas)
 
         buttonRects[i] = {x = bx, y = by, w = b.w, h = b.h, id = b.id, disabled = b.disabled}
 
-        local isHover = not b.disabled and
+        local isHover = not popup.visible and not b.disabled and
             vx >= bx and vx <= bx + b.w and
             vy >= by and vy <= by + b.h
 
         hud.drawStoneTablet(bx, by, b.w, b.h, b.text, isHover, b.disabled)
     end
 
+    -- ── Confirmation Popup Pass ────────────────────────────────────────────────
+    if popup.visible then
+        menu.drawPopup(w, h, vx, vy)
+    end
+
     -- Finish screen
     love.graphics.setCanvas()
+end
+
+function menu.drawPopup(w, h, vx, vy)
+    -- Darkened background overlay (More neutral)
+    love.graphics.setColor(0.02, 0.02, 0.02, 0.8)
+    love.graphics.rectangle("fill", 0, 0, w, h)
+
+    local pw, ph = 500, 240
+    local px, py = w/2 - pw/2, h/2 - ph/2
+
+    -- Neutral Shadow underneath
+    love.graphics.setBlendMode("alpha")
+    love.graphics.setColor(0, 0, 0, 0.4)
+    love.graphics.ellipse("fill", w/2, h/2 + 10, pw/2 + 20, ph/2 + 20)
+
+    -- Stone Slate Dialog Box
+    love.graphics.setColor(0.1, 0.1, 0.1, 0.98)
+    love.graphics.rectangle("fill", px, py, pw, ph, 4)
+    
+    -- Subtle top highlight (Ivory-ish)
+    love.graphics.setColor(0.7, 0.7, 0.65, 0.2)
+    love.graphics.line(px + 4, py + 1, px + pw - 4, py + 1)
+    
+    -- Weathered stone border
+    love.graphics.setLineWidth(2)
+    love.graphics.setColor(0.35, 0.35, 0.33, 0.8)
+    love.graphics.rectangle("line", px, py, pw, ph, 4)
+
+    -- Muted Warning Icon (Rusty/Dried Blood)
+    love.graphics.setColor(0.5, 0.15, 0.1, 0.8)
+    local itx, ity = w/2, py + 45
+    love.graphics.polygon("fill", itx, ity-15, itx-15, ity+10, itx+15, ity+10)
+    love.graphics.setColor(0.7, 0.7, 0.65, 0.9) -- Ivory inner
+    love.graphics.rectangle("fill", itx-2, ity-6, 4, 8)
+    love.graphics.rectangle("fill", itx-2, ity+5, 4, 2)
+
+    -- Message Text (Faded Ivory)
+    love.graphics.setFont(hud.getFont("button"))
+    love.graphics.setColor(0.85, 0.85, 0.8, 0.9)
+    love.graphics.printf(popup.text, px + 20, py + 80, pw - 40, "center")
+
+    -- Popup Buttons (Yes / No)
+    popup.rects = {}
+    local btnY = py + ph - 70
+    local gap = 30
+    local totalBtnW = 0
+    for _, b in ipairs(popup.buttons) do totalBtnW = totalBtnW + b.w end
+    totalBtnW = totalBtnW + gap * (#popup.buttons - 1)
+    
+    local startBtnX = w/2 - totalBtnW/2
+
+    for i, b in ipairs(popup.buttons) do
+        local bx = startBtnX + (i-1) * (b.w + gap)
+        local isHover = vx >= bx and vx <= bx + b.w and vy >= btnY and vy <= btnY + b.h
+        
+        popup.rects[i] = {x = bx, y = btnY, w = b.w, h = b.h, id = b.id}
+
+        if isHover then
+            -- Muted button highlights (Dusty Red / Steel Grey)
+            if b.id == "yes" then
+                love.graphics.setColor(0.4, 0.1, 0.1, 1)
+            else
+                love.graphics.setColor(0.3, 0.28, 0.25, 0.95) -- Standard Stone Hover
+            end
+            love.graphics.rectangle("fill", bx, btnY, b.w, b.h, 2)
+            
+            -- Keep the outline visible on hover! (Synced with hud.lua)
+            love.graphics.setColor(1, 0.9, 0.8, 1) 
+            love.graphics.rectangle("line", bx, btnY, b.w, b.h, 2)
+            
+            love.graphics.setColor(1, 1, 0.9, 0.85) -- Synced text color
+        else
+            love.graphics.setColor(0.12, 0.12, 0.12, 0.8)
+            love.graphics.rectangle("fill", bx, btnY, b.w, b.h, 2)
+            
+            love.graphics.setColor(0.7, 0.7, 0.65, 0.8) -- Synced idle border
+            love.graphics.rectangle("line", bx, btnY, b.w, b.h, 2)
+            
+            love.graphics.setColor(0.85, 0.85, 0.8, 0.65) -- Synced idle text
+        end
+        
+        love.graphics.printf(b.text, bx, btnY + 8, b.w, "center")
+    end
 end
 
 function menu.keypressed(key)
@@ -189,6 +337,18 @@ end
 
 function menu.mousepressed(vx, vy, button)
     if button ~= 1 then return end
+    
+    if popup.visible then
+        for _, rect in ipairs(popup.rects) do
+            if vx >= rect.x and vx <= rect.x + rect.w and
+               vy >= rect.y and vy <= rect.y + rect.h then
+                pendingAction = rect.id
+                return
+            end
+        end
+        return -- Block main buttons
+    end
+
     for _, rect in ipairs(buttonRects) do
         if not rect.disabled and
            vx >= rect.x and vx <= rect.x + rect.w and

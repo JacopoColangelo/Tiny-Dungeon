@@ -356,9 +356,9 @@ function hud.drawGameOver(mx, my)
     drawKnot(w/2, lineY)
 
     -- Stone Tablet sizes for Game Over
-    hud.gameOverButtons.respawn.w = 200
+    hud.gameOverButtons.respawn.w = 240
     hud.gameOverButtons.respawn.h = 50
-    hud.gameOverButtons.quit.w = 200
+    hud.gameOverButtons.quit.w = 240
     hud.gameOverButtons.quit.h = 50
 
     -- 4. Chipped Stone Buttons
@@ -369,7 +369,7 @@ function hud.drawGameOver(mx, my)
 
     local btns = {
         {id = "respawn", text = "Respawn"},
-        {id = "quit", text = "Quit"}
+        {id = "quit", text = "Main Menu"}
     }
 
     for i, b in ipairs(btns) do

@@ -5,6 +5,7 @@ local menu    = require("src.menu")
 local options = require("src.options")
 local game    = require("src.game")
 local pause   = require("src.pause")
+local storage = require("src.storage")
 
 local appState = "menu"           -- "menu" | "options" | "playing" | "paused"
 local optionsReturnState = "menu"  -- where to return after options
@@ -53,7 +54,7 @@ function love.load()
     refreshAllCanvases()
     crtShader = love.graphics.newShader("assets/shaders/crt.glsl")
 
-    menu.load()
+    menu.load(storage.exists())
     game.load()
 end
 
@@ -66,8 +67,14 @@ function love.update(dt)
         local action = menu.update(dt, vx, vy)
         if action == "newgame" then
             menu.resetAction()
+            storage.delete()
+            menu.load(false)
             appState = "playing"
-            game.loadHub()
+            game.newGame()
+        elseif action == "loadgame" then
+            menu.resetAction()
+            appState = "playing"
+            game.loadGame()
         elseif action == "options" then
             menu.resetAction()
             appState = "options"
@@ -101,6 +108,7 @@ function love.update(dt)
             optionsReturnState = "paused"
         elseif action == "menu" then
             pause.resetAction()
+            menu.load(storage.exists())
             appState = "menu"
         end
     end
@@ -115,7 +123,11 @@ function love.keypressed(key)
         if key == "escape" then
             appState = "paused"
         else
-            game.keypressed(key)
+            local result = game.keypressed(key)
+            if result == "menu" then
+                menu.load(storage.exists())
+                appState = "menu"
+            end
         end
     elseif appState == "paused" then
         pause.keypressed(key)
@@ -130,7 +142,11 @@ function love.mousepressed(mx, my, button)
     elseif appState == "options" then
         options.mousepressed(vx, vy, button)
     elseif appState == "playing" then
-        game.mousepressed(vx, vy, button)
+        local result = game.mousepressed(vx, vy, button)
+        if result == "menu" then
+            menu.load(storage.exists())
+            appState = "menu"
+        end
     elseif appState == "paused" then
         pause.mousepressed(vx, vy, button)
     end
@@ -140,7 +156,7 @@ function love.draw()
     -- Draw state content to virtual canvas
     local vx, vy = getVirtualMousePos(love.mouse.getPosition())
     if appState == "menu" then
-        menu.draw(screenCanvas)
+        menu.draw(screenCanvas, vx, vy)
     elseif appState == "options" then
         options.draw(screenCanvas)
     elseif appState == "playing" then
