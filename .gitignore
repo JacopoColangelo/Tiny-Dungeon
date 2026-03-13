@@ -1,2 +1,6 @@
 # Ignore all batch files
 *.bat
+
+# Save Data
+save/
+*.data
