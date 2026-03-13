@@ -174,7 +174,7 @@ function game.update(dt, vx, vy, isPaused)
         hub.updateGrass(dt, player)
         hub.updateRain(dt, camera.x, camera.y)
         hub.updateClouds(dt, player)
-        if enemy.showSlots then
+        if enemy.config.showSlots then
             -- Update slots in Hub if requested for debug visibility
             enemy.updateSlots(player.x + player.size/2, player.y + player.size/2, currentMap())
         end
@@ -251,7 +251,7 @@ function game.keypressed(key)
         if levelType == "dungeon" then
             if key == "space" then loadDungeon() end -- regenerate dungeon
         end
-        if key == "v" then enemy.showSlots = not enemy.showSlots end
+        if key == "v" then enemy.config.showSlots = not enemy.config.showSlots end
         if key == "k" and levelType == "dungeon" then
             local dmg = 0.5 + love.math.random() * 0.75
             player.hp = math.max(0, player.hp - dmg)
@@ -408,7 +408,7 @@ function game.draw(canvas, isPaused, vx, vy)
     end
 
     hud.drawDebugPanel()
-    hud.drawHUD(player)
+    hud.drawHUD(player, levelType == "dungeon")
     if levelType == "dungeon" then
         hud.drawSkillBar(player)
     end

@@ -60,54 +60,55 @@ end
 
 -- ── Health Orbs ──────────────────────────────────────────────────────────────
 
-function hud.drawHUD(player)
+function hud.drawHUD(player, isDungeon)
     local margin = 30
     local size = 12
     local spacing = 20
 
-    -- Anchor to top-right
-    local totalWidth = (player.maxHp - 1) * spacing + size
-    local startX = 1280 - margin - totalWidth
-    local startY = margin
+    if isDungeon then
+        -- Anchor to top-right
+        local totalWidth = (player.maxHp - 1) * spacing + size
+        local startX = 1280 - margin - totalWidth
+        local startY = margin
 
-    for i = 1, player.maxHp do
-        -- Deplete from Left to Right: 
-        -- This means if we have 3/4 health, we draw spheres 2, 3, and 4.
-        if i > (player.maxHp - player.hp) then
-            local x = startX + (i-1) * spacing
-            local y = startY
+        for i = 1, player.maxHp do
+            -- Deplete from Left to Right: 
+            -- This means if we have 3/4 health, we draw spheres 2, 3, and 4.
+            if i > (player.maxHp - player.hp) then
+                local x = startX + (i-1) * spacing
+                local y = startY
 
-            -- Alpha for partial hits
-            local healthDiff = i - (player.maxHp - player.hp)
-            local alpha = math.min(1, math.max(0, healthDiff))
+                -- Alpha for partial hits
+                local healthDiff = i - (player.maxHp - player.hp)
+                local alpha = math.min(1, math.max(0, healthDiff))
 
-            love.graphics.setBlendMode("add")
+                love.graphics.setBlendMode("add")
 
-            -- Outer Glow (Blocky)
-            love.graphics.setColor(0.1, 0.8, 0.4, 0.2 * alpha)
-            love.graphics.rectangle("fill", x-2, y+2, size+4, size-4)
-            love.graphics.rectangle("fill", x+2, y-2, size-4, size+4)
+                -- Outer Glow (Blocky)
+                love.graphics.setColor(0.1, 0.8, 0.4, 0.2 * alpha)
+                love.graphics.rectangle("fill", x-2, y+2, size+4, size-4)
+                love.graphics.rectangle("fill", x+2, y-2, size-4, size+4)
 
-            -- Core Pixel Orb
-            love.graphics.setColor(0.3, 1.0, 0.6, 0.9 * alpha)
-            love.graphics.rectangle("fill", x, y+2, size, size-4) -- Horiz
-            love.graphics.rectangle("fill", x+2, y, size-4, size) -- Vert
+                -- Core Pixel Orb
+                love.graphics.setColor(0.3, 1.0, 0.6, 0.9 * alpha)
+                love.graphics.rectangle("fill", x, y+2, size, size-4) -- Horiz
+                love.graphics.rectangle("fill", x+2, y, size-4, size) -- Vert
 
-            -- Highlight (Top-left pixel)
-            love.graphics.setColor(1, 1, 1, 0.5 * alpha)
-            love.graphics.rectangle("fill", x+3, y+3, 3, 3)
-
+                -- Highlight (Top-left pixel)
+                love.graphics.setColor(1, 1, 1, 0.5 * alpha)
+                love.graphics.rectangle("fill", x+3, y+3, 3, 3)
+            end
         end
     end
     love.graphics.setBlendMode("alpha")
     
-    hud.drawSouls(player)
+    hud.drawSouls(player, isDungeon)
 end
 
-function hud.drawSouls(player)
+function hud.drawSouls(player, isDungeon)
     local dt = love.timer.getDelta()
     local margin = 30
-    local startY = margin + 35 -- Under health orbs
+    local startY = isDungeon and (margin + 35) or margin
 
     local currentSouls = (player.soulsRun or 0) + (player.soulsTotal or 0)
     
