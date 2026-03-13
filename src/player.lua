@@ -8,6 +8,8 @@ local player = {
     size = 24,
     hp = 4,
     maxHp = 4,
+    soulsRun = 0,
+    soulsTotal = 0,
     torchSize = 250,
     shadowPolygon = nil,
     

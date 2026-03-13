@@ -5,6 +5,7 @@ local gothicTitleFont
 local gothicButtonFont
 local gothicSmallFont
 local debugFont
+local soulIconImg
 
 -- UI state
 local showUI = true
@@ -15,11 +16,16 @@ hud.gameOverButtons = {
     quit = {x = 0, y = 0, w = 240, h = 60}
 }
 
+-- Animation state
+hud.lastSouls = 0
+hud.soulPulseTimer = 0
+
 function hud.load()
     gothicTitleFont  = love.graphics.newFont("assets/fonts/Metamorphous-Regular.ttf", 64)
     gothicButtonFont = love.graphics.newFont("assets/fonts/Metamorphous-Regular.ttf", 20)
     gothicSmallFont  = love.graphics.newFont("assets/fonts/Metamorphous-Regular.ttf", 12)
     debugFont        = love.graphics.newFont(12)
+    soulIconImg      = love.graphics.newImage("assets/sprites/soul_icon.png")
 end
 
 function hud.getFont(name)
@@ -94,6 +100,80 @@ function hud.drawHUD(player)
         end
     end
     love.graphics.setBlendMode("alpha")
+    
+    hud.drawSouls(player)
+end
+
+function hud.drawSouls(player)
+    local dt = love.timer.getDelta()
+    local margin = 30
+    local startY = margin + 35 -- Under health orbs
+
+    local currentSouls = (player.soulsRun or 0) + (player.soulsTotal or 0)
+    
+    -- Detection for pulse effect
+    if currentSouls > hud.lastSouls then
+        hud.soulPulseTimer = 0.6
+    end
+    hud.lastSouls = currentSouls
+    
+    if hud.soulPulseTimer > 0 then
+        hud.soulPulseTimer = math.max(0, hud.soulPulseTimer - dt)
+    end
+
+    -- Format: Total (+Run)
+    local soulsText = tostring(player.soulsTotal or 0)
+    if (player.soulsRun or 0) > 0 then
+        soulsText = soulsText .. " (+" .. player.soulsRun .. ")"
+    end
+    
+    local font = gothicButtonFont
+    love.graphics.setFont(font)
+    local textWidth = font:getWidth(soulsText)
+    
+    -- Pulse scaling
+    local pulse = hud.soulPulseTimer / 0.6
+    local iconScalePulse = 1.0 + math.sin(pulse * math.pi) * 0.5
+    local textScalePulse = 1.0 + math.sin(pulse * math.pi) * 0.2
+    
+    local iconSize = 48
+    local iconPadding = 8
+    local totalW = iconSize + iconPadding + textWidth
+    
+    -- Calculate alignment with health bar (startX)
+    local healthSpacing = 20
+    local healthSize = 12
+    local healthTotalWidth = (player.maxHp - 1) * healthSpacing + healthSize
+    local healthStartX = 1280 - margin - healthTotalWidth
+    
+    local x = (healthStartX + healthTotalWidth) - totalW
+    local y = startY - 8
+
+    -- Center point for the icon (base position)
+    local cx, cy = x + iconSize/2, y + iconSize/2
+
+    -- Draw Soul Icon with pulse scaling and flicker
+    love.graphics.setBlendMode("add")
+    local t = love.timer.getTime()
+    local flicker = math.sin(t * 10) * 0.1 + 0.9
+    
+    love.graphics.setColor(1, 1, 1, 0.9 * flicker)
+    love.graphics.draw(soulIconImg, cx, cy, 0, (iconSize/soulIconImg:getWidth()) * iconScalePulse, (iconSize/soulIconImg:getHeight()) * iconScalePulse, soulIconImg:getWidth()/2, soulIconImg:getHeight()/2)
+    love.graphics.setBlendMode("alpha")
+
+    -- Draw Counter
+    if pulse > 0 then
+        love.graphics.setColor(0.5, 1, 1, 0.9 + pulse * 0.1)
+    else
+        love.graphics.setColor(1, 1, 1, 0.9)
+    end
+    
+    local textHeight = font:getHeight()
+    local tx = x + iconSize + iconPadding
+    local ty = cy -- Align text center with icon center
+    
+    -- Draw text with pulse scaling, origin at vertical center
+    love.graphics.print(soulsText, tx, ty, 0, textScalePulse, textScalePulse, 0, textHeight/2)
 end
 
 -- ── Skill Bar ────────────────────────────────────────────────────────────────

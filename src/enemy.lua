@@ -1,5 +1,6 @@
 local pathfinding = require("src.pathfinding")
 local enemy = {}
+local soul = require("src.soul")
 
 enemy.list = {}
 enemy.slots = {}
@@ -87,6 +88,12 @@ function enemy.spawn(map, px, py)
                         vx = math.random(-150, 150), vy = math.random(-150, 150),
                         life = 0.5, maxLife = 0.5, size = math.random(2, 4)
                     })
+                end
+                
+                -- Drop souls (65% chance)
+                if love.math.random() < 0.65 then
+                    local amount = love.math.random(3, 5)
+                    soul.spawn(self.x, self.y, amount)
                 end
             else
                 enemy.hitSound:play()

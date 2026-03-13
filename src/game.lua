@@ -7,6 +7,7 @@ local hud      = require("src.hud")
 local lighting = require("src.lighting")
 local hub      = require("src.hub")
 local pause    = require("src.pause")
+local soul     = require("src.soul")
 
 local game = {}
 
@@ -73,6 +74,7 @@ function game.loadHub()
     
     camera.snapTo(player)
     enemy.init()
+    soul.init()
     hub.portalParticles = {}
 end
 
@@ -103,6 +105,7 @@ local function loadDungeon()
 
     -- Spawn enemies
     enemy.init()
+    soul.init()
     local px = player.x + player.size/2
     local py = player.y + player.size/2
     for i = 1, 3 do
@@ -114,6 +117,7 @@ function game.load()
     game.refreshCanvas()
     highlightShader = love.graphics.newShader("assets/shaders/highlight.glsl")
     hud.load()
+    soul.load()
 
     -- Audio
     ambient = love.audio.newSource("assets/audio/dark_amb_01.wav", "stream")
@@ -163,6 +167,7 @@ function game.update(dt, vx, vy, isPaused)
     
     if levelType == "dungeon" then
         enemy.update(dt, player, map)
+        soul.update(dt, player, map)
         hub.updatePortal(dt, map)
     else
         hub.updatePortal(dt, hub)
@@ -207,10 +212,11 @@ function game.update(dt, vx, vy, isPaused)
 
     -- Death check (dungeon only)
     if levelType == "dungeon" then
-        if player.hp <= 0 and gameState == "play" then
-            player.hp = 0
-            gameState = "gameover"
-            if gameOverSound then 
+            if player.hp <= 0 and gameState == "play" then
+                player.hp = 0
+                player.soulsRun = 0 -- Lose souls on death
+                gameState = "gameover"
+                if gameOverSound then 
                 gameOverSound:setVolume(1.0)
                 gameOverSound:play() 
             end
@@ -234,6 +240,9 @@ function game.keypressed(key)
                 loadDungeon()
                 return
             elseif levelType == "dungeon" and map.isOnPortal(px, py) then
+                -- Extract souls
+                player.soulsTotal = (player.soulsTotal or 0) + (player.soulsRun or 0)
+                player.soulsRun = 0
                 game.loadHub()
                 return
             end
@@ -346,6 +355,7 @@ function game.draw(canvas, isPaused, vx, vy)
         end
         
         enemy.draw(player)
+        soul.draw()
         player.draw()
         
         if clickEffect.active then
@@ -398,8 +408,8 @@ function game.draw(canvas, isPaused, vx, vy)
     end
 
     hud.drawDebugPanel()
+    hud.drawHUD(player)
     if levelType == "dungeon" then
-        hud.drawHUD(player)
         hud.drawSkillBar(player)
     end
 
