@@ -6,6 +6,7 @@ local options = require("src.options")
 local game    = require("src.game")
 local pause   = require("src.pause")
 local storage = require("src.storage")
+local ui_audio = require("src.ui_audio")
 
 local appState = "menu"           -- "menu" | "options" | "playing" | "paused"
 local optionsReturnState = "menu"  -- where to return after options
@@ -55,16 +56,18 @@ function love.load()
     crtShader = love.graphics.newShader("assets/shaders/crt.glsl")
 
     menu.load(storage.exists())
+    ui_audio.load()
     game.load()
 end
 
 function love.update(dt)
     -- Animate CRT
     crtShader:send("time", love.timer.getTime())
+    ui_audio.update(dt)
 
     if appState == "menu" then
         local vx, vy = getVirtualMousePos(love.mouse.getPosition())
-        game.update(dt, vx, vy, false) -- Unmuffle in menu
+        game.update(dt, vx, vy, true, false) -- Logic paused, Unmuffled for menu
         local action = menu.update(dt, vx, vy)
         if action == "newgame" then
             menu.resetAction()
@@ -85,7 +88,7 @@ function love.update(dt)
         end
     elseif appState == "options" then
         local vx, vy = getVirtualMousePos(love.mouse.getPosition())
-        game.update(dt, vx, vy, false) -- Unmuffle in options
+        game.update(dt, vx, vy, true, false) -- Logic paused, Unmuffled for options
         local result = options.update(dt, vx, vy)
         if result == "refresh" then
             refreshAllCanvases()
@@ -97,10 +100,10 @@ function love.update(dt)
         end
     elseif appState == "playing" then
         local vx, vy = getVirtualMousePos(love.mouse.getPosition())
-        game.update(dt, vx, vy, false)
+        game.update(dt, vx, vy, false, false)
     elseif appState == "paused" then
         local vx, vy = getVirtualMousePos(love.mouse.getPosition())
-        game.update(dt, vx, vy, true)
+        game.update(dt, vx, vy, true, true)
         local action = pause.update(dt, vx, vy)
         if action == "resume" then
             pause.resetAction()

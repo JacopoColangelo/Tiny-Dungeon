@@ -1,4 +1,5 @@
 local hud = require("src.hud")
+local ui_audio = require("src.ui_audio")
 
 local options = {}
 
@@ -25,6 +26,7 @@ local appliedSettings = {
 
 local pendingAction = nil
 local isDraggingVolume = false
+local lastHoveredId = nil
 
 -- ── Persistence ──────────────────────────────────────────────────────────────
 
@@ -122,6 +124,23 @@ function options.update(dt, vx, vy)
     local sig = pendingAction
     pendingAction = nil
     return sig
+end
+
+local function handleControlHover(vx, vy)
+    local currentHoveredId = nil
+    for _, r in ipairs(controlRects) do
+        if vx >= r.x and vx <= r.x + r.w and vy >= r.y and vy <= r.y + r.h then
+            currentHoveredId = r.action
+            break
+        end
+    end
+
+    if currentHoveredId ~= lastHoveredId then
+        if currentHoveredId then
+            ui_audio.playHover()
+        end
+        lastHoveredId = currentHoveredId
+    end
 end
 
 function options.draw(screenCanvas)
@@ -249,6 +268,8 @@ function options.draw(screenCanvas)
 
     -- Finish screen
     love.graphics.setCanvas()
+    
+    handleControlHover(lastVX, lastVY)
 end
 
 function options.keypressed(key)
@@ -261,6 +282,7 @@ function options.mousepressed(vx, vy, button)
     if button ~= 1 then return end
     for _, r in ipairs(controlRects) do
         if vx >= r.x and vx <= r.x + r.w and vy >= r.y and vy <= r.y + r.h then
+            ui_audio.playClick()
             if r.action == "res_prev" then
                 settings.resIndex = settings.resIndex - 1
                 if settings.resIndex < 1 then settings.resIndex = #resolutions end

@@ -1,4 +1,5 @@
 local hud = require("src.hud")
+local ui_audio = require("src.ui_audio")
 
 local pause = {}
 
@@ -15,6 +16,7 @@ local buttonRects = {}
 
 -- Pending action
 local pendingAction = nil
+local lastHoveredId = nil
 
 -- ── Public API ───────────────────────────────────────────────────────────────
 
@@ -22,6 +24,23 @@ local lastVX, lastVY = 0, 0
 
 function pause.update(dt, vx, vy)
     lastVX, lastVY = vx, vy
+
+    local currentHoveredId = nil
+    for _, rect in ipairs(buttonRects) do
+        if vx >= rect.x and vx <= rect.x + rect.w and
+           vy >= rect.y and vy <= rect.y + rect.h then
+            currentHoveredId = rect.id
+            break
+        end
+    end
+
+    if currentHoveredId ~= lastHoveredId then
+        if currentHoveredId then
+            ui_audio.playHover()
+        end
+        lastHoveredId = currentHoveredId
+    end
+
     return pendingAction
 end
 
@@ -79,8 +98,9 @@ function pause.mousepressed(vx, vy, button)
     for _, rect in ipairs(buttonRects) do
         if vx >= rect.x and vx <= rect.x + rect.w and
            vy >= rect.y and vy <= rect.y + rect.h then
-            pendingAction = rect.id
-            return
+                pendingAction = rect.id
+                ui_audio.playClick()
+                return
         end
     end
 end

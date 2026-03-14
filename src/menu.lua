@@ -1,4 +1,5 @@
 local hud = require("src.hud")
+local ui_audio = require("src.ui_audio")
 
 local menu = {}
 
@@ -48,6 +49,7 @@ local buttonRects = {}
 
 -- Pending result from a click
 local pendingAction = nil
+local lastHoveredId = nil
 
 -- ── Public API ───────────────────────────────────────────────────────────────
 
@@ -101,6 +103,33 @@ function menu.update(dt, vx, vy)
         local p = spawnParticle(w, h)
         p.maxLife = p.life
         table.insert(particles, p)
+    end
+
+    -- Hover sounds
+    local currentHoveredId = nil
+    if not popup.visible then
+        for _, rect in ipairs(buttonRects) do
+            if vx >= rect.x and vx <= rect.x + rect.w and
+               vy >= rect.y and vy <= rect.y + rect.h then
+                currentHoveredId = rect.id
+                break
+            end
+        end
+    else
+        for _, rect in ipairs(popup.rects) do
+            if vx >= rect.x and vx <= rect.x + rect.w and
+               vy >= rect.y and vy <= rect.y + rect.h then
+                currentHoveredId = "popup_" .. rect.id
+                break
+            end
+        end
+    end
+
+    if currentHoveredId ~= lastHoveredId then
+        if currentHoveredId then
+            ui_audio.playHover()
+        end
+        lastHoveredId = currentHoveredId
     end
 
     if pendingAction then
@@ -371,6 +400,7 @@ function menu.mousepressed(vx, vy, button)
             if vx >= rect.x and vx <= rect.x + rect.w and
                vy >= rect.y and vy <= rect.y + rect.h then
                 pendingAction = rect.id
+                ui_audio.playClick()
                 return
             end
         end
@@ -382,6 +412,7 @@ function menu.mousepressed(vx, vy, button)
            vx >= rect.x and vx <= rect.x + rect.w and
            vy >= rect.y and vy <= rect.y + rect.h then
             pendingAction = rect.id
+            ui_audio.playClick()
             return
         end
     end

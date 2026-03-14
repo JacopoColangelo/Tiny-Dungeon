@@ -9,6 +9,7 @@ local hub      = require("src.hub")
 local pause    = require("src.pause")
 local soul     = require("src.soul")
 local storage  = require("src.storage")
+local ui_audio = require("src.ui_audio")
 local game = {}
 
 -- Rendering references (assigned in refreshCanvas or passed in draw)
@@ -35,6 +36,7 @@ local muffleFilter = {type = "lowpass", volume = 1.0, highgain = 0.05}
 local muffleFactor = 0 -- 0: clean, 1: fully muffled
 local isMuffled = false
 local portalShadowPolygon = nil
+local lastHoveredId = nil
 
 function _G.hitStop(duration)
     hitStopTimer = math.max(hitStopTimer, duration)
@@ -163,7 +165,7 @@ function game.isGameOver() return gameState == "gameover" end
 
 -- ── Update ───────────────────────────────────────────────────────────────────
 
-function game.update(dt, vx, vy, isPaused)
+function game.update(dt, vx, vy, logicPaused, audioMuffled)
     -- Save Notification Fade
     if saveNotificationTimer > 0 then
         saveNotificationAlpha = math.min(1, saveNotificationAlpha + dt * 4)
@@ -176,7 +178,7 @@ function game.update(dt, vx, vy, isPaused)
     local notificationPause = saveNotificationAlpha > 0.5
 
     -- Handle Audio Muffling with smooth cross-fade
-    local targetMuffle = (isPaused or notificationPause or gameState == "gameover") and 1 or 0
+    local targetMuffle = (audioMuffled or notificationPause or gameState == "gameover") and 1 or 0
     if muffleFactor ~= targetMuffle then
         local speed = 8 -- transition speed
         if muffleFactor < targetMuffle then
@@ -195,17 +197,44 @@ function game.update(dt, vx, vy, isPaused)
         end
     end
 
+    -- Hover sounds for Death / Save UI (Run even if world is paused)
+    local currentHoveredId = nil
+    if gameState == "gameover" then
+        local btns = hud.gameOverButtons
+        if vx >= btns.respawn.x and vx <= btns.respawn.x + btns.respawn.w and
+           vy >= btns.respawn.y and vy <= btns.respawn.y + btns.respawn.h then
+            currentHoveredId = "gameover_respawn"
+        elseif vx >= btns.quit.x and vx <= btns.quit.x + btns.quit.w and
+               vy >= btns.quit.y and vy <= btns.quit.y + btns.quit.h then
+            currentHoveredId = "gameover_quit"
+        end
+    end
+
+    if saveNotificationAlpha > 0.5 and saveNotificationRect then
+        local r = saveNotificationRect
+        if vx >= r.x and vx <= r.x + r.w and vy >= r.y and vy <= r.y + r.h then
+            currentHoveredId = "save_notification_close"
+        end
+    end
+
+    if currentHoveredId ~= lastHoveredId then
+        if currentHoveredId then
+            ui_audio.playHover()
+        end
+        lastHoveredId = currentHoveredId
+    end
+
     -- Hit stop logic
     if hitStopTimer > 0 then
         hitStopTimer = hitStopTimer - dt
         return
     end
 
-    if isPaused or notificationPause then return end
-
+    if logicPaused or notificationPause then return end
+    
     if worldReady then
         hub.updateTimer(dt)
-        hud.update(dt, isPaused or notificationPause)
+        hud.update(dt, logicPaused or notificationPause)
 
         if gameState == "gameover" then 
             if gameOverSound and gameOverSound:isPlaying() then
@@ -362,8 +391,10 @@ function game.mousepressed(vx, vy, button, isPaused)
         if vx >= btns.respawn.x and vx <= btns.respawn.x + btns.respawn.w and
            vy >= btns.respawn.y and vy <= btns.respawn.y + btns.respawn.h then
             game.loadHub()  -- respawn in hub
+            ui_audio.playClick()
         elseif vx >= btns.quit.x and vx <= btns.quit.x + btns.quit.w and
                vy >= btns.quit.y and vy <= btns.quit.y + btns.quit.h then
+            ui_audio.playClick()
             return "menu"
         end
     end
@@ -373,6 +404,7 @@ function game.mousepressed(vx, vy, button, isPaused)
         local r = saveNotificationRect
         if vx >= r.x and vx <= r.x + r.w and vy >= r.y and vy <= r.y + r.h then
             saveNotificationTimer = 0
+            ui_audio.playClick()
         end
     end
 
