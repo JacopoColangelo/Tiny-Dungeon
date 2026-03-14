@@ -11,6 +11,7 @@ local soul      = require("src.soul")
 local storage   = require("src.storage")
 local ui_audio  = require("src.ui_audio")
 local inventory = require("src.inventory")
+local skilltree = require("src.skilltree")
 local game = {}
 
 -- Rendering references (assigned in refreshCanvas or passed in draw)
@@ -165,6 +166,10 @@ function game.isInventoryOpen()
     return inventory.isOpen()
 end
 
+function game.isSkillTreeOpen()
+    return skilltree.isOpen()
+end
+
 function game.getCanvas() return screenCanvas end
 function game.getShader() return crtShader end
 function game.isGameOver() return gameState == "gameover" end
@@ -173,6 +178,7 @@ function game.isGameOver() return gameState == "gameover" end
 
 function game.mousemoved(vx, vy)
     inventory.mousemoved(vx, vy)
+    skilltree.mousemoved(vx, vy)
 end
 
 function game.update(dt, vx, vy, logicPaused, audioMuffled)
@@ -240,11 +246,15 @@ function game.update(dt, vx, vy, logicPaused, audioMuffled)
         return
     end
 
-    -- Inventory acts as a soft pause for game logic
+    -- Inventory and skill tree act as soft pauses for game logic
     local inventoryPause = inventory.isOpen()
+    local skilltreePause = skilltree.isOpen()
     inventory.update(dt, vx, vy)
+    if levelType == "hub" then
+        skilltree.update(dt, vx, vy)
+    end
 
-    if logicPaused or notificationPause or inventoryPause then return end
+    if logicPaused or notificationPause or inventoryPause or skilltreePause then return end
     
     if worldReady then
         hub.updateTimer(dt)
@@ -348,20 +358,33 @@ end
 
 function game.keypressed(key)
     if gameState == "play" then
-        -- Tab always toggles inventory (even when other keys might be consumed)
+        -- Tab toggles inventory
         if key == "tab" then
+            if skilltree.isOpen() then return nil end
             inventory.keypressed(key)
             return nil
         end
 
-        -- Escape closes inventory if open (before the pause check in main.lua)
-        if key == "escape" and inventory.isOpen() then
-            inventory.keypressed(key)
+        -- I toggles skill tree (hub only)
+        if key == "i" and levelType == "hub" then
+            if inventory.isOpen() then return nil end
+            skilltree.keypressed(key, player)
             return nil
         end
 
-        -- While inventory is open, swallow all other keypresses
-        if inventory.isOpen() then return nil end
+        -- Escape closes inventory or skill tree before pause
+        if key == "escape" then
+            if inventory.isOpen() then
+                inventory.keypressed(key)
+                return nil
+            elseif skilltree.isOpen() then
+                skilltree.keypressed(key, player)
+                return nil
+            end
+        end
+
+        -- While either overlay is open, swallow other keypresses
+        if inventory.isOpen() or skilltree.isOpen() then return nil end
 
         -- Enter/Exit portal
         if key == "e" or key == "return" then
@@ -401,6 +424,12 @@ end
 function game.mousepressed(vx, vy, button, isPaused)
     if isPaused then
         pause.mousepressed(vx, vy, button)
+        return
+    end
+
+    -- Skill tree intercepts when open
+    if skilltree.isOpen() then
+        skilltree.mousepressed(vx, vy, button, player)
         return
     end
 
@@ -566,7 +595,7 @@ function game.draw(canvas, isPaused, vx, vy)
     if levelType == "dungeon" then
         hud.drawSkillBar(player)
     end
-    hud.drawInventoryHint()
+    hud.drawInventoryHint(levelType == "hub")
 
     if portalPromptAlpha > 0 then
         local smallFont = hud.getFont("small")
@@ -622,6 +651,11 @@ function game.draw(canvas, isPaused, vx, vy)
     -- ── Inventory Overlay pass
     inventory.draw(vx, vy)
 
+    -- ── Skill Tree Overlay pass (hub only)
+    if levelType == "hub" then
+        skilltree.draw(vx, vy, player)
+    end
+
     -- ── Save Notification pass
     if saveNotificationAlpha > 0 then
         saveNotificationRect = hud.drawSaveNotification(saveNotificationAlpha, vx, vy, saveNotificationTimer / 4.0)
@@ -639,6 +673,7 @@ function game.saveGame()
         playerY = player.y,
         level = levelType,
         inventory = inventory.getSlots(),
+        skilltree = skilltree.getUnlocked(),
     }
     local success, msg = storage.save(saveData)
     if success then
@@ -665,6 +700,13 @@ function game.loadGame()
         else
             inventory.addItem("health_potion", 3)
         end
+
+        -- Skill tree: restore unlocked skills
+        if data.skilltree then
+            skilltree.setUnlocked(data.skilltree, player)
+        else
+            skilltree.init()
+        end
         
         if levelType == "hub" then
             game.loadHub()
@@ -682,6 +724,7 @@ end
 
 function game.newGame()
     -- Reset Player stats
+    player.maxHp = 4
     player.soulsTotal = 0
     player.soulsRun = 0
     player.hp = player.maxHp
@@ -695,6 +738,9 @@ function game.newGame()
     -- Inventory: fresh start with 3 health potions
     inventory.init()
     inventory.addItem("health_potion", 3)
+
+    -- Skill tree: fresh start
+    skilltree.init()
     
     -- Switch to Hub
     game.loadHub()

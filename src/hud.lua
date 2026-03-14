@@ -255,8 +255,9 @@ end
 
 -- ── Inventory Hint ────────────────────────────────────────────────────────────
 
-function hud.drawInventoryHint()
-    local hintText = "[Tab] Inventory"
+function hud.drawInventoryHint(showSkillHint)
+    local hintText  = "[Tab] Inventory"
+    local skillText = "[I] Skills"
     love.graphics.setFont(gothicSmallFont)
     local tw = gothicSmallFont:getWidth(hintText)
     local th = gothicSmallFont:getHeight()
@@ -265,16 +266,25 @@ function hud.drawInventoryHint()
     local hx = HUD_MARGIN
     local hy = HUD_MARGIN
 
-    -- Subtle backing pill
+    -- Inventory hint pill
     love.graphics.setColor(0, 0, 0, 0.30)
     love.graphics.rectangle("fill", hx - 4, hy - 3, tw + 8, th + 6, 3)
-
-    -- Text shadow
     love.graphics.setColor(0, 0, 0, 0.55)
     love.graphics.print(hintText, hx + 1, hy + 1)
-    -- Text face (dim ivory, low-profile)
     love.graphics.setColor(0.65, 0.65, 0.60, 0.65)
     love.graphics.print(hintText, hx, hy)
+
+    -- Skills hint pill (hub only, stacked below)
+    if showSkillHint then
+        local sw  = gothicSmallFont:getWidth(skillText)
+        local sy2 = hy + th + 6
+        love.graphics.setColor(0, 0, 0, 0.30)
+        love.graphics.rectangle("fill", hx - 4, sy2 - 3, sw + 8, th + 6, 3)
+        love.graphics.setColor(0, 0, 0, 0.55)
+        love.graphics.print(skillText, hx + 1, sy2 + 1)
+        love.graphics.setColor(0.65, 0.65, 0.60, 0.65)
+        love.graphics.print(skillText, hx, sy2)
+    end
 end
 
 -- ── Stone Tablet Button (reusable) ───────────────────────────────────────────

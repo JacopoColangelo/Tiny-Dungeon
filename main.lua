@@ -128,14 +128,14 @@ function love.keypressed(key)
         options.keypressed(key)
     elseif appState == "playing" then
         if key == "escape" then
-            if game.isInventoryOpen() then
-                -- Let the inventory module close itself
+            if game.isInventoryOpen() or game.isSkillTreeOpen() then
+                -- Let the active module close itself
                 local result = game.keypressed(key)
             elseif not game.isNotificationActive() and not game.isGameOver() then
                 appState = "paused"
             end
-        elseif key == "tab" then
-            -- Tab always goes to game when playing (opens/closes inventory)
+        elseif key == "tab" or key == "i" then
+            -- Let game.lua handle these keys (open/close UI overlays)
             if not game.isNotificationActive() and not game.isGameOver() then
                 local result = game.keypressed(key)
                 if result == "menu" then
