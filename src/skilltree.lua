@@ -336,17 +336,15 @@ local function drawNodes(vx, vy, animTimer)
         end
         love.graphics.rectangle("line", nx, ny, nw, nh, 3)
 
-        -- Unlocked glow (additive cyan, matching skill bar)
+        -- Unlocked glow (additive cyan)
         if isUnlocked then
             love.graphics.setBlendMode("add")
-            local flash = math.sin((animTimer or 0) * 6) * 0.5 + 0.5
-            love.graphics.setColor(0, 0.6, 0.5, 0.18 * flash)
+            love.graphics.setColor(0, 0.6, 0.5, 0.18)
             love.graphics.rectangle("fill", nx, ny, nw, nh, 3)
             love.graphics.setBlendMode("alpha")
         elseif isHover and isAvailable then
             love.graphics.setBlendMode("add")
-            local flash = math.sin((animTimer or 0) * 8) * 0.5 + 0.5
-            love.graphics.setColor(0, 0.5, 0.8, 0.14 * flash)
+            love.graphics.setColor(0, 0.5, 0.8, 0.14)
             love.graphics.rectangle("fill", nx, ny, nw, nh, 3)
             love.graphics.setBlendMode("alpha")
         end

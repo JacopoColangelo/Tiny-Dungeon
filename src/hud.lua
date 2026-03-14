@@ -42,9 +42,10 @@ function hud.keypressed(key)
 end
 
 function hud.update(dt, isPaused)
-    if isPaused then return end
-    
+    -- Always tick the animation timer so UI elements (like hover glows) keep breathing
     hud.animTimer = hud.animTimer + dt
+
+    if isPaused then return end
     
     if hud.soulPulseTimer > 0 then
         hud.soulPulseTimer = math.max(0, hud.soulPulseTimer - dt)

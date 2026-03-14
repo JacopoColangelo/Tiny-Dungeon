@@ -33,6 +33,7 @@ local slots         = {}   -- [i] = { itemId = string, count = number } or nil
 local hoveredSlot   = nil  -- index 1..MAX_SLOTS or nil
 local contextMenu   = nil  -- { slotIndex, x, y, actions = {{label, fn}, ...} }
 local lastHoveredCtx = nil -- for hover audio on context menu buttons
+local lastHoveredSlot = nil -- for hover audio on slots
 
 -- Panel top-left corner (computed each draw so we don't need to store state)
 local panelX, panelY = 0, 0
@@ -113,6 +114,7 @@ function inventory.toggle()
         contextMenu  = nil
         hoveredSlot  = nil
         lastHoveredCtx = nil
+        lastHoveredSlot = nil
     end
 end
 
@@ -280,11 +282,11 @@ function inventory.update(dt, vx, vy)
     else
         -- Hover audio for slots
         local newHov = slotAtPoint(vx, vy)
-        if newHov ~= hoveredSlot then
-            if newHov and slots[newHov] then
+        if newHov ~= lastHoveredSlot then
+            if newHov then
                 ui_audio.playHover()
             end
-            hoveredSlot = newHov
+            lastHoveredSlot = newHov
         end
     end
 end
@@ -382,11 +384,10 @@ local function drawSlots(vx, vy, animTimer)
         end
         love.graphics.rectangle("line", sx, sy, sw, sh, 2)
 
-        -- Hover glow (additive, matching skill bar ready glow)
+        -- Hover glow (additive)
         if isHover then
             love.graphics.setBlendMode("add")
-            local flash = math.sin((animTimer or 0) * 8) * 0.5 + 0.5
-            love.graphics.setColor(0, 0.5, 0.8, 0.15 * flash)
+            love.graphics.setColor(0, 0.5, 0.8, 0.15)
             love.graphics.rectangle("fill", sx, sy, sw, sh, 2)
             love.graphics.setBlendMode("alpha")
         end

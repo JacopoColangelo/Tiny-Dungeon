@@ -254,11 +254,15 @@ function game.update(dt, vx, vy, logicPaused, audioMuffled)
         skilltree.update(dt, vx, vy)
     end
 
+    if worldReady then
+        -- HUD gets updated regardless of inventory/skill tree pause so animTimer keeps ticking
+        hud.update(dt, logicPaused or notificationPause or inventoryPause or skilltreePause)
+    end
+
     if logicPaused or notificationPause or inventoryPause or skilltreePause then return end
     
     if worldReady then
         hub.updateTimer(dt)
-        hud.update(dt, logicPaused or notificationPause)
 
         if gameState == "gameover" then 
             if gameOverSound and gameOverSound:isPlaying() then
