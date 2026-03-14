@@ -64,6 +64,7 @@ function love.update(dt)
 
     if appState == "menu" then
         local vx, vy = getVirtualMousePos(love.mouse.getPosition())
+        game.update(dt, vx, vy, false) -- Unmuffle in menu
         local action = menu.update(dt, vx, vy)
         if action == "newgame" then
             menu.resetAction()
@@ -84,6 +85,7 @@ function love.update(dt)
         end
     elseif appState == "options" then
         local vx, vy = getVirtualMousePos(love.mouse.getPosition())
+        game.update(dt, vx, vy, false) -- Unmuffle in options
         local result = options.update(dt, vx, vy)
         if result == "refresh" then
             refreshAllCanvases()
@@ -95,9 +97,10 @@ function love.update(dt)
         end
     elseif appState == "playing" then
         local vx, vy = getVirtualMousePos(love.mouse.getPosition())
-        game.update(dt, vx, vy)
+        game.update(dt, vx, vy, false)
     elseif appState == "paused" then
         local vx, vy = getVirtualMousePos(love.mouse.getPosition())
+        game.update(dt, vx, vy, true)
         local action = pause.update(dt, vx, vy)
         if action == "resume" then
             pause.resetAction()
@@ -108,6 +111,7 @@ function love.update(dt)
             optionsReturnState = "paused"
         elseif action == "menu" then
             pause.resetAction()
+            game.stop()
             menu.load(storage.exists())
             appState = "menu"
         end
@@ -121,10 +125,13 @@ function love.keypressed(key)
         options.keypressed(key)
     elseif appState == "playing" then
         if key == "escape" then
-            appState = "paused"
+            if not game.isNotificationActive() and not game.isGameOver() then
+                appState = "paused"
+            end
         else
             local result = game.keypressed(key)
             if result == "menu" then
+                game.stop()
                 menu.load(storage.exists())
                 appState = "menu"
             end
@@ -144,6 +151,7 @@ function love.mousepressed(mx, my, button)
     elseif appState == "playing" then
         local result = game.mousepressed(vx, vy, button)
         if result == "menu" then
+            game.stop()
             menu.load(storage.exists())
             appState = "menu"
         end

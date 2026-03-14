@@ -358,9 +358,7 @@ function menu.drawPopup(w, h, vx, vy)
 end
 
 function menu.keypressed(key)
-    if key == "escape" then
-        pendingAction = "quit"
-    elseif key == "return" then
+    if key == "return" then
         pendingAction = "newgame"
     end
 end

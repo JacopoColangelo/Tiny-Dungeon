@@ -43,6 +43,7 @@ hub.cloudOffX = 0             -- perlin noise scroll offset X
 hub.cloudOffY = 0             -- perlin noise scroll offset Y
 hub.cloudSpeed = 1.0        -- world units/sec noise drift
 hub.moonAngle  = math.rad(-15) -- slight ray angle from vertical, pointing left
+hub.animTimer  = 0             -- Persistent timer for all visual animations
 
 -- ── Color Palette (withered grove / gothic stone) ────────────────────────────
 
@@ -481,6 +482,10 @@ function hub.updatePortal(dt, map)
     end
 end
 
+function hub.updateTimer(dt)
+    hub.animTimer = hub.animTimer + dt
+end
+
 -- ── Rain update / draw ────────────────────────────────────────────────────────
 
 local RAIN_ANGLE = math.rad(-15)   -- right-to-left slant
@@ -675,7 +680,7 @@ function hub.draw(camera)
     -- Draw pixel-leaf canopy along the edges
     -- Since the contours are now naturally rounded, these beautiful, thin pixel lobes
     -- precisely trace the visual wall edge natively shifted by 7 pixels inward.
-    local t = love.timer.getTime()
+    local t = hub.animTimer
     for _, leaf in ipairs(hub.canopyLobes) do
         local swayX = math.sin(t * leaf.speed + leaf.phase) * 1.5
         local swayY = math.cos(t * leaf.speed * 0.8 + leaf.phase) * 1.0
@@ -698,7 +703,7 @@ end
 
 function hub.drawSaveShrine()
     local tx, ty = hub.getSaveShrineWorldPos()
-    local t = love.timer.getTime()
+    local t = hub.animTimer
     
     -- Glow
     love.graphics.setBlendMode("add")
@@ -755,7 +760,7 @@ function hub.drawPortal(px, py, radius)
     
     local rPy = py - 25 -- Visual rift offset (only affects drawing, not collision)
     radius = radius or hub.portalRadius
-    local t = love.timer.getTime()
+    local t = hub.animTimer
 
     -- 1. Outer Ethereal Atmosphere (Alpha pass for softness)
     love.graphics.setBlendMode("alpha")

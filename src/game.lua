@@ -14,6 +14,7 @@ local game = {}
 -- Rendering references (assigned in refreshCanvas or passed in draw)
 local screenCanvas
 local ambient
+local ambientMuffled
 local gameOverSound
 local highlightShader
 local objectCanvas
@@ -22,9 +23,17 @@ local gameState = "play"   -- "play" | "gameover"
 local levelType = "hub"    -- "hub"  | "dungeon"
 local hitStopTimer = 0
 local clickEffect = { x = 0, y = 0, timer = 0, lifetime = 0.3, active = false }
+local baseAmbientVolume = 0.5
+local worldReady = false
 
 local portalPromptAlpha = 0
 local shrinePromptAlpha = 0
+local saveNotificationTimer = 0
+local saveNotificationAlpha = 0
+local saveNotificationRect = nil
+local muffleFilter = {type = "lowpass", volume = 1.0, highgain = 0.05}
+local muffleFactor = 0 -- 0: clean, 1: fully muffled
+local isMuffled = false
 local portalShadowPolygon = nil
 
 function _G.hitStop(duration)
@@ -55,12 +64,17 @@ function game.loadHub()
     
     levelType = "hub"
     gameState = "play"
+    worldReady = true
     player.hp = player.maxHp
     
     if gameOverSound then gameOverSound:stop() end
-    if ambient then
-        ambient:setVolume(0.5)
+    if ambient and ambientMuffled then
+        local cleanVol = 1.0 - muffleFactor
+        local muffledVol = muffleFactor * 0.5
+        ambient:setVolume(baseAmbientVolume * cleanVol)
+        ambientMuffled:setVolume(baseAmbientVolume * muffledVol)
         ambient:play()
+        ambientMuffled:play()
     end
     
     -- Place player at hub spawn
@@ -88,9 +102,13 @@ local function loadDungeon()
     player.hp = player.maxHp
     
     if gameOverSound then gameOverSound:stop() end
-    if ambient then
-        ambient:setVolume(0.5)
+    if ambient and ambientMuffled then
+        local cleanVol = 1.0 - muffleFactor
+        local muffledVol = muffleFactor * 0.5
+        ambient:setVolume(baseAmbientVolume * cleanVol)
+        ambientMuffled:setVolume(baseAmbientVolume * muffledVol)
         ambient:play()
+        ambientMuffled:play()
     end
     
     -- Center player in starting tile
@@ -121,121 +139,165 @@ function game.load()
     soul.load()
 
     -- Audio
-    ambient = love.audio.newSource("assets/audio/dark_amb_01.wav", "stream")
+    ambient = love.audio.newSource("assets/audio/dark_amb_01.wav", "static")
     ambient:setLooping(true)
-    ambient:setVolume(0.5)
+    ambient:setVolume(baseAmbientVolume)
     ambient:play()
+
+    ambientMuffled = love.audio.newSource("assets/audio/dark_amb_01.wav", "static")
+    ambientMuffled:setLooping(true)
+    ambientMuffled:setFilter({type = "lowpass", highgain = 0.03, volume = 1.0})
+    ambientMuffled:setVolume(0)
+    ambientMuffled:play()
 
     gameOverSound = love.audio.newSource("assets/audio/game_over.wav", "static")
 end
 
+function game.isNotificationActive()
+    return saveNotificationAlpha > 0.05
+end
+
 function game.getCanvas() return screenCanvas end
 function game.getShader() return crtShader end
+function game.isGameOver() return gameState == "gameover" end
 
 -- ── Update ───────────────────────────────────────────────────────────────────
 
 function game.update(dt, vx, vy, isPaused)
-    -- Hit-Stop
+    -- Save Notification Fade
+    if saveNotificationTimer > 0 then
+        saveNotificationAlpha = math.min(1, saveNotificationAlpha + dt * 4)
+        saveNotificationTimer = saveNotificationTimer - dt
+    else
+        saveNotificationAlpha = math.max(0, saveNotificationAlpha - dt * 2)
+    end
+
+    -- If save notification is highly visible, effectively pause the game
+    local notificationPause = saveNotificationAlpha > 0.5
+
+    -- Handle Audio Muffling with smooth cross-fade
+    local targetMuffle = (isPaused or notificationPause or gameState == "gameover") and 1 or 0
+    if muffleFactor ~= targetMuffle then
+        local speed = 8 -- transition speed
+        if muffleFactor < targetMuffle then
+            muffleFactor = math.min(targetMuffle, muffleFactor + dt * speed)
+        else
+            muffleFactor = math.max(targetMuffle, muffleFactor - dt * speed)
+        end
+        
+        if ambient and ambientMuffled then
+            -- Cross-fade volumes instead of shifting filter coefficients (prevents artifacts)
+            local cleanVol = 1.0 - muffleFactor
+            local muffledVol = muffleFactor * 0.5 -- 50% volume drop for muffled version
+            
+            ambient:setVolume(baseAmbientVolume * cleanVol)
+            ambientMuffled:setVolume(baseAmbientVolume * muffledVol)
+        end
+    end
+
+    -- Hit stop logic
     if hitStopTimer > 0 then
         hitStopTimer = hitStopTimer - dt
         return
     end
 
-    if isPaused then return end
+    if isPaused or notificationPause then return end
 
-    if gameState == "gameover" then 
-        if gameOverSound and gameOverSound:isPlaying() then
-            local dur = gameOverSound:getDuration()
-            local pos = gameOverSound:tell()
-            local fadeTime = 1.5
-            if pos > dur - fadeTime then
-                local alpha = (dur - pos) / fadeTime
-                gameOverSound:setVolume(math.max(0, alpha))
+    if worldReady then
+        hub.updateTimer(dt)
+        hud.update(dt, isPaused or notificationPause)
+
+        if gameState == "gameover" then 
+            if gameOverSound and gameOverSound:isPlaying() then
+                local dur = gameOverSound:getDuration()
+                local pos = gameOverSound:tell()
+                local fadeTime = 1.5
+                if pos > dur - fadeTime then
+                    local alpha = (dur - pos) / fadeTime
+                    gameOverSound:setVolume(math.max(0, alpha))
+                end
+            end
+            return 
+        end
+        
+        if gameState == "play" then
+            if love.mouse.isDown(1) then
+                local sx, sy = camera.getShakeOffset()
+                player.targetX = vx + camera.x - sx
+                player.targetY = vy + camera.y - sy
             end
         end
-        return 
-    end
-    
-    if gameState == "play" then
-        if love.mouse.isDown(1) then
-            local sx, sy = camera.getShakeOffset()
-            player.targetX = vx + camera.x - sx
-            player.targetY = vy + camera.y - sy
-        end
-    end
 
-    player.update(dt, currentMap())
-    
-    if levelType == "dungeon" then
-        enemy.update(dt, player, map)
-        soul.update(dt, player, map)
-        hub.updatePortal(dt, map)
-    else
-        hub.updatePortal(dt, hub)
-        hub.updateGrass(dt, player)
-        hub.updateRain(dt, camera.x, camera.y)
-        hub.updateClouds(dt, player)
-        if enemy.config.showSlots then
-            -- Update slots in Hub if requested for debug visibility
-            enemy.updateSlots(player.x + player.size/2, player.y + player.size/2, currentMap())
-        end
-    end
-
-    -- Click Animation
-    if clickEffect.active then
-        clickEffect.timer = clickEffect.timer - dt
-        if clickEffect.timer <= 0 then clickEffect.active = false end
-    end
-
-    -- Camera
-    camera.follow(player, dt)
-
-    -- Shadow cast
-    local px = player.x + player.size / 2
-    local py = player.y + player.size / 2
-    player.shadowPolygon = shadows.cast(px, py, player.torchSize + 20)
-    
-    local pWX, pWY = currentMap().getPortalWorldPos()
-    local distSq = (px - pWX)^2 + (py - pWY)^2
-    -- Only cull if very far away (well off-screen)
-    if distSq < 1500 * 1500 then
-        portalShadowPolygon = shadows.cast(pWX, pWY, 700)
-    else
-        portalShadowPolygon = nil
-    end
-
-    -- Portal check
-    if currentMap().isOnPortal(player.x, player.y) then
-        portalPromptAlpha = math.min(1, portalPromptAlpha + dt * 4)
-    else
-        portalPromptAlpha = math.max(0, portalPromptAlpha - dt * 4)
-    end
-
-    if levelType == "hub" then
-        if hub.isOnSaveShrine(px, py) then
-            shrinePromptAlpha = math.min(1, shrinePromptAlpha + dt * 4)
+        player.update(dt, currentMap())
+        
+        if levelType == "dungeon" then
+            enemy.update(dt, player, map)
+            soul.update(dt, player, map)
+            hub.updatePortal(dt, map)
         else
-            shrinePromptAlpha = math.max(0, shrinePromptAlpha - dt * 4)
+            hub.updatePortal(dt, hub)
+            hub.updateGrass(dt, player)
+            hub.updateRain(dt, camera.x, camera.y)
+            hub.updateClouds(dt, player)
+            if enemy.config.showSlots then
+                enemy.updateSlots(player.x + player.size/2, player.y + player.size/2, currentMap())
+            end
         end
-    else
-        shrinePromptAlpha = 0
-    end
 
-    -- Death check (dungeon only)
-    if levelType == "dungeon" then
+        -- Click Animation
+        if clickEffect.active then
+            clickEffect.timer = clickEffect.timer - dt
+            if clickEffect.timer <= 0 then clickEffect.active = false end
+        end
+
+        -- Camera
+        camera.follow(player, dt)
+
+        -- Shadow cast
+        local px = player.x + player.size / 2
+        local py = player.y + player.size / 2
+        player.shadowPolygon = shadows.cast(px, py, player.torchSize + 20)
+        
+        local pWX, pWY = currentMap().getPortalWorldPos()
+        local distSq = (px - pWX)^2 + (py - pWY)^2
+        if distSq < 1500 * 1500 then
+            portalShadowPolygon = shadows.cast(pWX, pWY, 700)
+        else
+            portalShadowPolygon = nil
+        end
+
+        -- Portal check
+        if currentMap().isOnPortal(player.x, player.y) then
+            portalPromptAlpha = math.min(1, portalPromptAlpha + dt * 4)
+        else
+            portalPromptAlpha = math.max(0, portalPromptAlpha - dt * 4)
+        end
+
+        if levelType == "hub" then
+            if hub.isOnSaveShrine(px, py) then
+                shrinePromptAlpha = math.min(1, shrinePromptAlpha + dt * 4)
+            else
+                shrinePromptAlpha = math.max(0, shrinePromptAlpha - dt * 4)
+            end
+        else
+            shrinePromptAlpha = 0
+        end
+
+        -- Death check (dungeon only)
+        if levelType == "dungeon" then
             if player.hp <= 0 and gameState == "play" then
                 player.hp = 0
                 player.soulsRun = 0 -- Lose souls on death
                 gameState = "gameover"
                 if gameOverSound then 
-                gameOverSound:setVolume(1.0)
-                gameOverSound:play() 
+                    gameOverSound:setVolume(1.0)
+                    gameOverSound:play() 
+                end
             end
-            if ambient then ambient:setVolume(0.1) end
+        else
+            -- Safety: keep hp max in hub
+            player.hp = player.maxHp
         end
-    else
-        -- Safety: keep hp max in hub
-        player.hp = player.maxHp
     end
 end
 
@@ -305,6 +367,15 @@ function game.mousepressed(vx, vy, button, isPaused)
             return "menu"
         end
     end
+
+    -- Save Notification interaction
+    if saveNotificationAlpha > 0 and saveNotificationRect and button == 1 then
+        local r = saveNotificationRect
+        if vx >= r.x and vx <= r.x + r.w and vy >= r.y and vy <= r.y + r.h then
+            saveNotificationTimer = 0
+        end
+    end
+
     return nil
 end
 
@@ -414,7 +485,7 @@ function game.draw(canvas, isPaused, vx, vy)
         love.graphics.setFont(smallFont)
         local ltw = smallFont:getWidth(label)
         
-        local bob = math.sin(love.timer.getTime() * 1.5) * 5
+        local bob = math.sin(hub.animTimer * 1.5) * 5
         local ly = ty - 80 + bob
         
         love.graphics.setColor(0, 0, 0, 0.8 * portalPromptAlpha)
@@ -457,7 +528,7 @@ function game.draw(canvas, isPaused, vx, vy)
         love.graphics.setFont(smallFont)
         local ltw = smallFont:getWidth(label)
         
-        local bob = math.sin(love.timer.getTime() * 1.5) * 5
+        local bob = math.sin(hub.animTimer * 1.5) * 5
         local ly = ty - 60 + bob
         
         love.graphics.setColor(0, 0, 0, 0.8 * shrinePromptAlpha)
@@ -480,15 +551,15 @@ function game.draw(canvas, isPaused, vx, vy)
         pause.drawOverlay(vx, vy)
     end
 
+    -- ── Save Notification pass
+    if saveNotificationAlpha > 0 then
+        saveNotificationRect = hud.drawSaveNotification(saveNotificationAlpha, vx, vy, saveNotificationTimer / 4.0)
+    end
+
     love.graphics.setCanvas()
 end
 
-function game.newGame()
-    player.soulsTotal = 0
-    player.soulsRun = 0
-    game.loadHub()
-    print("New Game Started!")
-end
+
 
 function game.saveGame()
     local saveData = {
@@ -500,7 +571,7 @@ function game.saveGame()
     local success, msg = storage.save(saveData)
     if success then
         print("Game Saved!")
-        -- Maybe add a visual indicator in HUD later
+        saveNotificationTimer = 4.0
     else
         print("Save failed: " .. tostring(msg))
     end
@@ -544,6 +615,22 @@ function game.newGame()
     -- Switch to Hub
     game.loadHub()
     print("New Game Started!")
+end
+
+function game.stop()
+    worldReady = false
+    gameState = "play"
+    
+    -- Volume reset
+    if ambient and ambientMuffled then
+        muffleFactor = 0
+        ambient:setVolume(baseAmbientVolume)
+        ambientMuffled:setVolume(0)
+    end
+    
+    if gameOverSound then
+        gameOverSound:stop()
+    end
 end
 
 return game

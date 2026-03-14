@@ -19,6 +19,7 @@ hud.gameOverButtons = {
 -- Animation state
 hud.lastSouls = 0
 hud.soulPulseTimer = 0
+hud.animTimer = 0
 
 function hud.load()
     gothicTitleFont  = love.graphics.newFont("assets/fonts/Metamorphous-Regular.ttf", 64)
@@ -38,6 +39,16 @@ end
 
 function hud.keypressed(key)
     if key == "h" then showUI = not showUI end
+end
+
+function hud.update(dt, isPaused)
+    if isPaused then return end
+    
+    hud.animTimer = hud.animTimer + dt
+    
+    if hud.soulPulseTimer > 0 then
+        hud.soulPulseTimer = math.max(0, hud.soulPulseTimer - dt)
+    end
 end
 
 -- ── Debug Panel ──────────────────────────────────────────────────────────────
@@ -106,21 +117,16 @@ function hud.drawHUD(player, isDungeon)
 end
 
 function hud.drawSouls(player, isDungeon)
-    local dt = love.timer.getDelta()
     local margin = 30
     local startY = isDungeon and (margin + 35) or margin
 
     local currentSouls = (player.soulsRun or 0) + (player.soulsTotal or 0)
     
-    -- Detection for pulse effect
+    -- Detection for pulse effect (Note: pulse logic is now in hud.update)
     if currentSouls > hud.lastSouls then
         hud.soulPulseTimer = 0.6
     end
     hud.lastSouls = currentSouls
-    
-    if hud.soulPulseTimer > 0 then
-        hud.soulPulseTimer = math.max(0, hud.soulPulseTimer - dt)
-    end
 
     -- Format: Total (+Run)
     local soulsText = tostring(player.soulsTotal or 0)
@@ -155,8 +161,7 @@ function hud.drawSouls(player, isDungeon)
 
     -- Draw Soul Icon with pulse scaling and flicker
     love.graphics.setBlendMode("add")
-    local t = love.timer.getTime()
-    local flicker = math.sin(t * 10) * 0.1 + 0.9
+    local flicker = math.sin(hud.animTimer * 10) * 0.1 + 0.9
     
     love.graphics.setColor(1, 1, 1, 0.9 * flicker)
     love.graphics.draw(soulIconImg, cx, cy, 0, (iconSize/soulIconImg:getWidth()) * iconScalePulse, (iconSize/soulIconImg:getHeight()) * iconScalePulse, soulIconImg:getWidth()/2, soulIconImg:getHeight()/2)
@@ -216,7 +221,7 @@ function hud.drawSkillBar(player)
         love.graphics.rectangle("fill", sx, sy + boxSize * (1 - pct), boxSize, 1)
     else
         -- Ready Flash/Glow
-        local flash = math.sin(love.timer.getTime() * 8) * 0.5 + 0.5
+        local flash = math.sin(hud.animTimer * 8) * 0.5 + 0.5
         love.graphics.setBlendMode("add")
         love.graphics.setColor(0, 0.8, 1, 0.2 * flash)
         love.graphics.rectangle("fill", sx, sy, boxSize, boxSize, 2)
@@ -242,27 +247,29 @@ end
 
 -- ── Stone Tablet Button (reusable) ───────────────────────────────────────────
 
-function hud.drawStoneTablet(x, y, w, h, text, isHover, isDisabled)
+function hud.drawStoneTablet(x, y, w, h, text, isHover, isDisabled, parentAlpha)
+    local pa = parentAlpha or 1
+
     -- 1. Heavy Stone Shadow
-    love.graphics.setColor(0, 0, 0, 0.6)
+    love.graphics.setColor(0, 0, 0, 0.6 * pa)
     love.graphics.rectangle("fill", x + 5, y + 5, w, h, 2)
 
     -- 2. Tablet Base
     if isDisabled then
-        love.graphics.setColor(0.08, 0.08, 0.08, 0.7)
+        love.graphics.setColor(0.08, 0.08, 0.08, 0.7 * pa)
         love.graphics.rectangle("fill", x, y, w, h, 2)
         love.graphics.setLineWidth(1)
-        love.graphics.setColor(0.35, 0.35, 0.33, 0.4)
+        love.graphics.setColor(0.35, 0.35, 0.33, 0.4 * pa)
     elseif isHover then
-        love.graphics.setColor(0.3, 0.28, 0.25, 0.95)
+        love.graphics.setColor(0.3, 0.28, 0.25, 0.95 * pa)
         love.graphics.rectangle("fill", x, y, w, h, 2)
         love.graphics.setLineWidth(2)
-        love.graphics.setColor(1, 0.9, 0.8, 1)
+        love.graphics.setColor(1, 0.9, 0.8, 1 * pa)
     else
-        love.graphics.setColor(0.12, 0.12, 0.12, 0.95)
+        love.graphics.setColor(0.12, 0.12, 0.12, 0.95 * pa)
         love.graphics.rectangle("fill", x, y, w, h, 2)
         love.graphics.setLineWidth(1)
-        love.graphics.setColor(0.7, 0.7, 0.65, 0.8)
+        love.graphics.setColor(0.7, 0.7, 0.65, 0.8 * pa)
     end
 
     -- 3. Chipped Edges
@@ -276,7 +283,7 @@ function hud.drawStoneTablet(x, y, w, h, text, isHover, isDisabled)
     love.graphics.rectangle("line", x, y, w, h, 2)
 
     -- 4. Inset border
-    love.graphics.setColor(0, 0, 0, 0.4)
+    love.graphics.setColor(0, 0, 0, 0.4 * pa)
     love.graphics.rectangle("line", x + 6, y + 6, w - 12, h - 12)
 
     -- 5. Typography using Metamorphous
@@ -285,17 +292,17 @@ function hud.drawStoneTablet(x, y, w, h, text, isHover, isDisabled)
     local th = gothicButtonFont:getHeight()
     local tx, ty = x + (w/2 - tw/2), y + (h/2 - th/2)
 
-    -- Text Shadow (Reduced opacity)
-    love.graphics.setColor(0, 0, 0, 0.6)
+    -- Text Shadow
+    love.graphics.setColor(0, 0, 0, 0.6 * pa)
     love.graphics.print(text, tx + 1, ty + 1)
 
-    -- Text Face (Reduced opacity for "etched" look)
+    -- Text Face
     if isDisabled then
-        love.graphics.setColor(0.4, 0.4, 0.38, 0.4) -- Dim when disabled
+        love.graphics.setColor(0.4, 0.4, 0.38, 0.4 * pa)
     elseif isHover then 
-        love.graphics.setColor(1, 1, 0.9, 0.85) -- Brighter on hover
+        love.graphics.setColor(1, 1, 0.9, 0.85 * pa)
     else 
-        love.graphics.setColor(0.85, 0.85, 0.8, 0.65) -- Faded ivory idle
+        love.graphics.setColor(0.85, 0.85, 0.8, 0.65 * pa)
     end
     love.graphics.print(text, tx, ty)
 end
@@ -383,8 +390,88 @@ function hud.drawGameOver(mx, my)
         hud.drawStoneTablet(btnObj.x, btnObj.y, btnObj.w, btnObj.h, b.text, isHover, false)
     end
 
-    -- Reset to default font
-    love.graphics.setNewFont(12) 
+    hud.resetFont()
+end
+
+-- ── Save Notification Popup ─────────────────────────────────────────────────
+
+function hud.drawSaveNotification(alpha, mx, my, timerRatio)
+    if alpha <= 0 then return nil end
+    
+    local tr = timerRatio or 0
+    local w, h = 1280, 720
+    local pw, ph = 500, 240
+    local px, py = w/2 - pw/2, h/2 - ph/2
+    
+    -- Fade based on alpha (Matching menu.lua overlay)
+    love.graphics.setColor(0.02, 0.02, 0.02, 0.8 * alpha)
+    love.graphics.rectangle("fill", 0, 0, w, h)
+    
+    -- Neutral Shadow underneath (Matching menu.lua)
+    love.graphics.setBlendMode("alpha")
+    love.graphics.setColor(0, 0, 0, 0.4 * alpha)
+    love.graphics.ellipse("fill", w/2, h/2 + 10, pw/2 + 20, ph/2 + 20)
+
+    -- Stone Slate Dialog Box
+    love.graphics.setColor(0.1, 0.1, 0.1, 0.98 * alpha)
+    love.graphics.rectangle("fill", px, py, pw, ph, 4)
+    
+    -- Subtle top highlight (Ivory-ish)
+    love.graphics.setColor(0.7, 0.7, 0.65, 0.2 * alpha)
+    love.graphics.line(px + 4, py + 1, px + pw - 4, py + 1)
+    
+    -- Weathered stone border
+    love.graphics.setLineWidth(2)
+    love.graphics.setColor(0.35, 0.35, 0.33, 0.8 * alpha)
+    love.graphics.rectangle("line", px, py, pw, ph, 4)
+    
+    -- Success Icon (Information 'i' in Rounded Square)
+    love.graphics.setLineWidth(1)
+    love.graphics.setColor(0.85, 0.85, 0.8, 0.7 * alpha) -- Subtle Ivory
+    local cx, cy = w/2, py + 45
+    local rs = 9 -- Smaller size to match warning icon scale
+    
+    -- Rounded Square
+    love.graphics.rectangle("line", cx - rs, cy - rs, rs*2, rs*2, 4)
+    
+    -- The 'i'
+    love.graphics.rectangle("fill", cx - 0.5, cy - 2, 1, 6) -- thinner stem
+    love.graphics.rectangle("fill", cx - 0.5, cy - 5, 1, 1.5) -- dot
+    
+    -- Message (Matching menu.lua styling)
+    love.graphics.setFont(gothicButtonFont)
+    love.graphics.setColor(0.85, 0.85, 0.8, 0.9 * alpha)
+    love.graphics.printf("Game Saved", px + 20, py + 85, pw - 40, "center")
+    
+    -- --- Etched Progress Bar ---
+    local barW, barH = 200, 4
+    local barX, barY = w/2 - barW/2, py + 125
+    
+    -- Carved slot
+    love.graphics.setColor(0.05, 0.05, 0.05, 0.6 * alpha)
+    love.graphics.rectangle("fill", barX, barY, barW, barH, 1)
+    
+    -- Draining fill (Ivory glow)
+    if tr > 0 then
+        love.graphics.setColor(0.8, 0.75, 0.6, 0.75 * alpha)
+        love.graphics.rectangle("fill", barX, barY, barW * tr, barH, 1)
+    end
+    
+    -- "Got it" Button (Matching menu.lua layout)
+    local bw, bh = 140, 45
+    local bx, by = w/2 - bw/2, py + ph - 70
+    local isHover = mx >= bx and mx <= bx + bw and my >= by and my <= by + bh
+    
+    hud.drawStoneTablet(bx, by, bw, bh, "Got it", isHover, false, alpha)
+    
+    -- Return button rect for hit testing in game.lua
+    return {x = bx, y = by, w = bw, h = bh}
+end
+
+-- ── Reset to default font ───────────────────────────────────────────────────
+
+function hud.resetFont()
+    love.graphics.setNewFont(12)
 end
 
 return hud
