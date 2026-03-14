@@ -29,8 +29,8 @@ local popup = {
     visible = false,
     text = "Start a new game?\nThis will reset your current progress.",
     buttons = {
-        {id = "yes", text = "YES", w = 120, h = 40},
-        {id = "no",  text = "NO",  w = 120, h = 40}
+        {id = "yes", text = "Yes", w = 120, h = 40},
+        {id = "no",  text = "No",  w = 120, h = 40}
     },
     rects = {} -- screen hitboxes for popup buttons
 }

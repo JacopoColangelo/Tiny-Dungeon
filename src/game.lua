@@ -1,15 +1,16 @@
-local player   = require("src.player")
-local map      = require("src.map")
-local shadows  = require("src.shadows")
-local enemy    = require("src.enemy")
-local camera   = require("src.camera")
-local hud      = require("src.hud")
-local lighting = require("src.lighting")
-local hub      = require("src.hub")
-local pause    = require("src.pause")
-local soul     = require("src.soul")
-local storage  = require("src.storage")
-local ui_audio = require("src.ui_audio")
+local player    = require("src.player")
+local map       = require("src.map")
+local shadows   = require("src.shadows")
+local enemy     = require("src.enemy")
+local camera    = require("src.camera")
+local hud       = require("src.hud")
+local lighting  = require("src.lighting")
+local hub       = require("src.hub")
+local pause     = require("src.pause")
+local soul      = require("src.soul")
+local storage   = require("src.storage")
+local ui_audio  = require("src.ui_audio")
+local inventory = require("src.inventory")
 local game = {}
 
 -- Rendering references (assigned in refreshCanvas or passed in draw)
@@ -139,6 +140,7 @@ function game.load()
     highlightShader = love.graphics.newShader("assets/shaders/highlight.glsl")
     hud.load()
     soul.load()
+    inventory.load()
 
     -- Audio
     ambient = love.audio.newSource("assets/audio/dark_amb_01.wav", "static")
@@ -159,11 +161,19 @@ function game.isNotificationActive()
     return saveNotificationAlpha > 0.05
 end
 
+function game.isInventoryOpen()
+    return inventory.isOpen()
+end
+
 function game.getCanvas() return screenCanvas end
 function game.getShader() return crtShader end
 function game.isGameOver() return gameState == "gameover" end
 
 -- ── Update ───────────────────────────────────────────────────────────────────
+
+function game.mousemoved(vx, vy)
+    inventory.mousemoved(vx, vy)
+end
 
 function game.update(dt, vx, vy, logicPaused, audioMuffled)
     -- Save Notification Fade
@@ -230,7 +240,11 @@ function game.update(dt, vx, vy, logicPaused, audioMuffled)
         return
     end
 
-    if logicPaused or notificationPause then return end
+    -- Inventory acts as a soft pause for game logic
+    local inventoryPause = inventory.isOpen()
+    inventory.update(dt, vx, vy)
+
+    if logicPaused or notificationPause or inventoryPause then return end
     
     if worldReady then
         hub.updateTimer(dt)
@@ -334,6 +348,21 @@ end
 
 function game.keypressed(key)
     if gameState == "play" then
+        -- Tab always toggles inventory (even when other keys might be consumed)
+        if key == "tab" then
+            inventory.keypressed(key)
+            return nil
+        end
+
+        -- Escape closes inventory if open (before the pause check in main.lua)
+        if key == "escape" and inventory.isOpen() then
+            inventory.keypressed(key)
+            return nil
+        end
+
+        -- While inventory is open, swallow all other keypresses
+        if inventory.isOpen() then return nil end
+
         -- Enter/Exit portal
         if key == "e" or key == "return" then
             local px = player.x + player.size/2
@@ -372,6 +401,12 @@ end
 function game.mousepressed(vx, vy, button, isPaused)
     if isPaused then
         pause.mousepressed(vx, vy, button)
+        return
+    end
+
+    -- Inventory intercepts ALL mouse presses when open
+    if inventory.isOpen() then
+        inventory.mousepressed(vx, vy, button, player)
         return
     end
     
@@ -531,6 +566,7 @@ function game.draw(canvas, isPaused, vx, vy)
     if levelType == "dungeon" then
         hud.drawSkillBar(player)
     end
+    hud.drawInventoryHint()
 
     if portalPromptAlpha > 0 then
         local smallFont = hud.getFont("small")
@@ -583,6 +619,9 @@ function game.draw(canvas, isPaused, vx, vy)
         pause.drawOverlay(vx, vy)
     end
 
+    -- ── Inventory Overlay pass
+    inventory.draw(vx, vy)
+
     -- ── Save Notification pass
     if saveNotificationAlpha > 0 then
         saveNotificationRect = hud.drawSaveNotification(saveNotificationAlpha, vx, vy, saveNotificationTimer / 4.0)
@@ -598,7 +637,8 @@ function game.saveGame()
         soulsTotal = player.soulsTotal,
         playerX = player.x,
         playerY = player.y,
-        level = levelType
+        level = levelType,
+        inventory = inventory.getSlots(),
     }
     local success, msg = storage.save(saveData)
     if success then
@@ -617,6 +657,14 @@ function game.loadGame()
         player.x = data.playerX or player.x
         player.y = data.playerY or player.y
         levelType = data.level or "hub"
+
+        -- Inventory: restore saved slots (or fall back to starter set)
+        inventory.init()
+        if data.inventory then
+            inventory.setSlots(data.inventory)
+        else
+            inventory.addItem("health_potion", 3)
+        end
         
         if levelType == "hub" then
             game.loadHub()
@@ -643,6 +691,10 @@ function game.newGame()
     clickEffect.active = false
     portalPromptAlpha = 0
     shrinePromptAlpha = 0
+
+    -- Inventory: fresh start with 3 health potions
+    inventory.init()
+    inventory.addItem("health_potion", 3)
     
     -- Switch to Hub
     game.loadHub()

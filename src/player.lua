@@ -1,3 +1,5 @@
+local inventory = require("src.inventory")
+
 local player = {
     x = 0,
     y = 0,

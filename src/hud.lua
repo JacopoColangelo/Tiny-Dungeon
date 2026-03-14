@@ -53,20 +53,28 @@ end
 
 -- ── Debug Panel ──────────────────────────────────────────────────────────────
 
+-- Top-left margin (matches the right-side HUD margin of 30)
+local HUD_MARGIN = 30
+
 function hud.drawDebugPanel()
     if not showUI then return end
+
+    -- Sits below the inventory hint: hint is ~24px tall, 6px gap → start at margin + 24 + 6 = 60
+    local panelY = HUD_MARGIN + 30
+    local panelX = HUD_MARGIN
 
     love.graphics.setFont(debugFont)
     love.graphics.setLineWidth(1)
     love.graphics.setColor(0, 0, 0, 0.4)
-    love.graphics.rectangle("fill", 10, 10, 240, 120, 5)
+    love.graphics.rectangle("fill", panelX, panelY, 240, 120, 5)
     love.graphics.setColor(1, 1, 1, 0.9)
 
-    love.graphics.print("FPS: " .. love.timer.getFPS(), 20, 20)
-    love.graphics.print("SPACE: New Dungeon", 20, 40)
-    love.graphics.print("V: Toggle Slots", 20, 60)
-    love.graphics.print("H: Hide UI", 20, 80)
-    love.graphics.print("K: Damage Player", 20, 100)
+    local tx = panelX + 10
+    love.graphics.print("FPS: " .. love.timer.getFPS(), tx, panelY + 10)
+    love.graphics.print("SPACE: New Dungeon",             tx, panelY + 30)
+    love.graphics.print("V: Toggle Slots",                tx, panelY + 50)
+    love.graphics.print("H: Hide UI",                     tx, panelY + 70)
+    love.graphics.print("K: Damage Player",                tx, panelY + 90)
 end
 
 -- ── Health Orbs ──────────────────────────────────────────────────────────────
@@ -243,6 +251,30 @@ function hud.drawSkillBar(player)
     end
     love.graphics.line(sx + 10, sy + 30, sx + 30, sy + 10)
     love.graphics.setBlendMode("alpha")
+end
+
+-- ── Inventory Hint ────────────────────────────────────────────────────────────
+
+function hud.drawInventoryHint()
+    local hintText = "[Tab] Inventory"
+    love.graphics.setFont(gothicSmallFont)
+    local tw = gothicSmallFont:getWidth(hintText)
+    local th = gothicSmallFont:getHeight()
+
+    -- Anchored top-left, same margin as right-side HUD elements
+    local hx = HUD_MARGIN
+    local hy = HUD_MARGIN
+
+    -- Subtle backing pill
+    love.graphics.setColor(0, 0, 0, 0.30)
+    love.graphics.rectangle("fill", hx - 4, hy - 3, tw + 8, th + 6, 3)
+
+    -- Text shadow
+    love.graphics.setColor(0, 0, 0, 0.55)
+    love.graphics.print(hintText, hx + 1, hy + 1)
+    -- Text face (dim ivory, low-profile)
+    love.graphics.setColor(0.65, 0.65, 0.60, 0.65)
+    love.graphics.print(hintText, hx, hy)
 end
 
 -- ── Stone Tablet Button (reusable) ───────────────────────────────────────────
@@ -457,12 +489,12 @@ function hud.drawSaveNotification(alpha, mx, my, timerRatio)
         love.graphics.rectangle("fill", barX, barY, barW * tr, barH, 1)
     end
     
-    -- "Got it" Button (Matching menu.lua layout)
+    -- "Ok" Button (Matching menu.lua layout)
     local bw, bh = 140, 45
     local bx, by = w/2 - bw/2, py + ph - 70
     local isHover = mx >= bx and mx <= bx + bw and my >= by and my <= by + bh
     
-    hud.drawStoneTablet(bx, by, bw, bh, "Got it", isHover, false, alpha)
+    hud.drawStoneTablet(bx, by, bw, bh, "Ok", isHover, false, alpha)
     
     -- Return button rect for hit testing in game.lua
     return {x = bx, y = by, w = bw, h = bh}
