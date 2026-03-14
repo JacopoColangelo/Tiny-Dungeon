@@ -12,6 +12,7 @@ local storage   = require("src.storage")
 local ui_audio  = require("src.ui_audio")
 local inventory = require("src.inventory")
 local skilltree = require("src.skilltree")
+local projectile= require("src.projectile")
 local game = {}
 
 -- Rendering references (assigned in refreshCanvas or passed in draw)
@@ -129,10 +130,12 @@ local function loadDungeon()
     -- Spawn enemies
     enemy.init()
     soul.init()
+    projectile.init()
     local px = player.x + player.size/2
     local py = player.y + player.size/2
     for i = 1, 3 do
-        enemy.spawn(map, px, py)
+        local eType = love.math.random() > 0.5 and "melee" or "ranged"
+        enemy.spawn(map, px, py, eType)
     end
 end
 
@@ -156,6 +159,18 @@ function game.load()
     ambientMuffled:play()
 
     gameOverSound = love.audio.newSource("assets/audio/game_over.wav", "static")
+
+    _G.game = game
+end
+
+function game.spawnEnemyProjectile(x, y, dx, dy)
+    projectile.spawn(x, y, dx, dy, {
+        speed = 200,
+        size = 8,
+        damage = 0.5,
+        color = {0.6, 0.2, 1.0},
+        life = 3.0
+    })
 end
 
 function game.isNotificationActive()
@@ -290,6 +305,7 @@ function game.update(dt, vx, vy, logicPaused, audioMuffled)
         if levelType == "dungeon" then
             enemy.update(dt, player, map)
             soul.update(dt, player, map)
+            projectile.update(dt, player, map)
             hub.updatePortal(dt, map)
         else
             hub.updatePortal(dt, hub)
@@ -543,6 +559,9 @@ function game.draw(canvas, isPaused, vx, vy)
         
         enemy.draw(player)
         soul.draw()
+        if levelType == "dungeon" then
+            projectile.draw()
+        end
         player.draw()
         
         if clickEffect.active then

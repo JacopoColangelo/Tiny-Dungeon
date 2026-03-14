@@ -4,80 +4,74 @@ local soul = require("src.soul")
 local enemy = {}
 
 -- ============================================================================
--- DESIGNER CONFIGURATION
--- ============================================================================
--- Feel free to tune these values to change enemy behavior and look.
-
-enemy.config = {
-    -- Basic Stats
-    maxHp = 100,
-    speed = 110,
-    size = 20,
-    color = {1, 0.2, 0.2}, -- Default red for alive state
-    
-    -- Detection & Aggro
-    perceptionRadius = 250,  -- Distance to notice player
-    groupAggroRadius = 350,  -- Distance to alert nearby friends
-    hitFlashDuration = 0.15, -- How long they flash white when hit
-    
-    -- Charge Attack Logic
-    chargeRange = 100,       -- Distance to trigger the charge
-    chargeSpeed = 650,       -- Velocity during the dash
-    chargeDuration = 0.3,    -- How long the dash lasts
-    chargeWindup = 0.4,      -- Pre-charge delay (telegraph)
-    chargeCooldown = 2.0,    -- Time between charges
-    damagePerHit = 0.7,      -- Damage dealt to player
-    
-    -- Soul Drops
-    soulDropRate = 0.65,     -- 65% chance to drop souls
-    soulMinDrop = 3,         -- Minimum souls dropped
-    soulMaxDrop = 5,         -- Maximum souls dropped
-    
-    -- Visual Particles (Death)
-    deathParticleCount = 15,
-    deathParticleSpeed = 150,
-    deathParticleLife = 0.5,
-    
-    -- Combat Slots (Positioning around player)
-    numSlots = 8,            -- How many positions around player
-    slotRadius = 50,         -- Distance from player
-    minSlotDist = 35,        -- Minimum distance between slots
-    showSlots = false        -- Debug: show slots and paths
-}
-
--- ============================================================================
--- MODULE STATE
+-- MODULE STATE & TYPES
 -- ============================================================================
 
 enemy.list = {}
 enemy.slots = {}
 enemy.particles = {}
+enemy.typeModules = {}
 
 -- Audio Assets
 enemy.hitSound = love.audio.newSource("assets/audio/enemy_hit.wav", "static")
 enemy.deathSound = love.audio.newSource("assets/audio/enemy_death.wav", "static")
 
 -- ============================================================================
--- HELPERS
+-- DESIGNER CONFIGURATION (Shared)
 -- ============================================================================
 
-local function isPointInWall(x, y, map)
+enemy.config = {
+    perceptionRadius = 250,  -- Distance to notice player
+    groupAggroRadius = 350,  -- Distance to alert nearby friends
+    hitFlashDuration = 0.15, -- How long they flash white when hit
+    
+    soulDropRate = 0.65,
+    soulMinDrop = 3,
+    soulMaxDrop = 5,
+    
+    deathParticleCount = 15,
+    deathParticleSpeed = 150,
+    deathParticleLife = 0.5,
+    
+    numSlots = 8,
+    slotRadius = 50,
+    minSlotDist = 35,
+    showSlots = false
+}
+
+-- ============================================================================
+-- HELPERS (Exposed to enemy types)
+-- ============================================================================
+
+function enemy.isPointInWall(x, y, map)
     local tx = math.floor(x / map.gridSize) + 1
     local ty = math.floor(y / map.gridSize) + 1
     if tx < 1 or tx > map.width or ty < 1 or ty > map.height then return true end
     return map.data[ty][tx] == 1
 end
 
-local function hasLOS(x1, y1, x2, y2, map)
+function enemy.hasLOS(x1, y1, x2, y2, map)
     local dx, dy = x2 - x1, y2 - y1
     local dist = math.sqrt(dx*dx + dy*dy)
     if dist < 5 then return true end
     local steps = math.ceil(dist / 10)
     for s = 1, steps do
         local t = s / steps
-        if isPointInWall(x1 + dx * t, y1 + dy * t, map) then return false end
+        if enemy.isPointInWall(x1 + dx * t, y1 + dy * t, map) then return false end
     end
     return true
+end
+
+function enemy.addParticle(x, y, color)
+    table.insert(enemy.particles, {
+        x = x, y = y,
+        vx = (math.random() * 10 - 5),
+        vy = (math.random() * 10 - 5),
+        life = 0.2,
+        maxLife = 0.2,
+        size = math.random(2, 6),
+        color = color
+    })
 end
 
 -- ============================================================================
@@ -87,13 +81,22 @@ end
 function enemy.init()
     enemy.list = {}
     enemy.particles = {}
+    
+    -- Load Enemy Types
+    enemy.typeModules.melee = require("src.enemies.melee")
+    enemy.typeModules.ranged = require("src.enemies.ranged")
+
     local num = enemy.config.numSlots
     for i = 1, num do
         enemy.slots[i] = { x = 0, y = 0, baseX = 0, baseY = 0, occupied = false, valid = false }
     end
 end
 
-function enemy.spawn(map, px, py)
+function enemy.spawn(map, px, py, eType)
+    eType = eType or "melee"
+    local typeMod = enemy.typeModules[eType]
+    if not typeMod then return end
+
     local spawnX, spawnY
     local minDist = 400
     local found = false
@@ -117,69 +120,59 @@ function enemy.spawn(map, px, py)
     end
     
     if found then
-        local cfg = enemy.config
         local e = {
+            type = eType,
             state = "alive",
             x = spawnX,
             y = spawnY,
-            size = cfg.size,
-            speed = cfg.speed,
-            slotId = nil,
             aggro = false,
-            path = nil,
-            pathTimer = 0,
-            color = cfg.color,
-            hp = cfg.maxHp,
-            maxHp = cfg.maxHp,
             hitFlash = 0,
             kbX = 0,
             kbY = 0,
-            
-            -- Charge Attack State
-            chargeState = "none", -- "none", "winding", "charging"
-            chargeTimer = 0,
-            chargeCooldown = 0,
-            chargeDirX = 0,
-            chargeDirY = 0,
-            hasDealtDamage = false
+            path = nil,
+            pathTimer = 0,
+            slotId = nil
         }
+        
+        -- Let type-specific module init stats/state
+        typeMod.create(e)
 
         function e:takeDamage(damage, kx, ky)
             if self.state == "dying" then return end
             
             self.hp = self.hp - damage
-            self.hitFlash = cfg.hitFlashDuration
+            self.hitFlash = enemy.config.hitFlashDuration
             
             if self.hp <= 0 then
                 enemy.deathSound:play()
                 self.state = "dying"
                 
                 -- Death Burst Particles
-                for p = 1, cfg.deathParticleCount do
-                    local spd = cfg.deathParticleSpeed
+                for p = 1, enemy.config.deathParticleCount do
+                    local spd = enemy.config.deathParticleSpeed
                     table.insert(enemy.particles, {
                         x = self.x, y = self.y,
                         vx = math.random(-spd, spd), 
                         vy = math.random(-spd, spd),
-                        life = cfg.deathParticleLife, 
-                        maxLife = cfg.deathParticleLife, 
+                        life = enemy.config.deathParticleLife, 
+                        maxLife = enemy.config.deathParticleLife, 
                         size = math.random(2, 4)
                     })
                 end
                 
-                -- Soul Drops (Random Chance)
-                if love.math.random() < cfg.soulDropRate then
-                    local amount = love.math.random(cfg.soulMinDrop, cfg.soulMaxDrop)
+                -- Soul Drops
+                if love.math.random() < enemy.config.soulDropRate then
+                    local amount = love.math.random(enemy.config.soulMinDrop, enemy.config.soulMaxDrop)
                     soul.spawn(self.x, self.y, amount)
                 end
             else
                 enemy.hitSound:play()
                 self.kbX, self.kbY = kx, ky
                 
-                -- Interrupt charge if hit
-                if self.chargeState == "winding" or self.chargeState == "charging" then
-                    self.chargeState = "none"
-                    self.chargeCooldown = 1.2 -- Brief stun
+                -- Interrupt attack if hit
+                if self.attackState == "winding" or self.attackState == "charging" then
+                    self.attackState = "none"
+                    self.attackCooldown = 1.2
                 end
             end
         end
@@ -196,12 +189,11 @@ function enemy.updateSlots(px, py, map)
         local baseAngle = ((i-1) / num) * math.pi * 2
         local foundValid, bestX, bestY = false, px, py
         
-        -- Smart slot positioning: check angle offsets to avoid walls
         for angleOffset = 0, math.pi/4, 0.1 do
             for sign = 1, -1, -2 do
                 local angle = baseAngle + angleOffset * (angleOffset == 0 and 0 or sign)
                 local tx, ty = px + math.cos(angle) * cfg.slotRadius, py + math.sin(angle) * cfg.slotRadius
-                if not isPointInWall(tx, ty, map) then
+                if not enemy.isPointInWall(tx, ty, map) then
                     bestX, bestY, foundValid = tx, ty, true
                     break
                 end
@@ -210,12 +202,11 @@ function enemy.updateSlots(px, py, map)
             if foundValid then break end
         end
         
-        -- Fallback: pull slot closer to player if pushed into wall
         if not foundValid then
             for d = 1, 10 do
                 local dist = cfg.slotRadius * (1 - d/10)
                 local tx, ty = px + math.cos(baseAngle) * dist, py + math.sin(baseAngle) * dist
-                if not isPointInWall(tx, ty, map) then
+                if not enemy.isPointInWall(tx, ty, map) then
                     bestX, bestY, foundValid = tx, ty, (dist > 20)
                     break
                 end
@@ -226,12 +217,11 @@ function enemy.updateSlots(px, py, map)
         enemy.slots[i].baseX = px + math.cos(baseAngle) * cfg.slotRadius
         enemy.slots[i].baseY = py + math.sin(baseAngle) * cfg.slotRadius
         
-        -- Validation check: slot must have LOS to player
-        if foundValid and not hasLOS(px, py, bestX, bestY, map) then foundValid = false end
+        if foundValid and not enemy.hasLOS(px, py, bestX, bestY, map) then foundValid = false end
         enemy.slots[i].valid = foundValid
     end
     
-    -- Slot Repulsion (prevent slots from overlapping)
+    -- Slot Repulsion
     for pass = 1, 3 do
         for i = 1, num do
             if enemy.slots[i].valid then
@@ -242,10 +232,10 @@ function enemy.updateSlots(px, py, map)
                         if dist < cfg.minSlotDist then
                             local push = (cfg.minSlotDist - dist) / 2
                             local nx, ny = (dx/dist) * push, (dy/dist) * push
-                            if not isPointInWall(enemy.slots[j].x + nx, enemy.slots[j].y + ny, map) then
+                            if not enemy.isPointInWall(enemy.slots[j].x + nx, enemy.slots[j].y + ny, map) then
                                 enemy.slots[j].x, enemy.slots[j].y = enemy.slots[j].x + nx, enemy.slots[j].y + ny
                             end
-                            if not isPointInWall(enemy.slots[i].x - nx, enemy.slots[i].y - ny, map) then
+                            if not enemy.isPointInWall(enemy.slots[i].x - nx, enemy.slots[i].y - ny, map) then
                                 enemy.slots[i].x, enemy.slots[i].y = enemy.slots[i].x - nx, enemy.slots[i].y - ny
                             end
                         end
@@ -279,79 +269,27 @@ function enemy.update(dt, player, map)
             -- Apply Knockback
             if math.abs(e.kbX) > 1 or math.abs(e.kbY) > 1 then
                 local nx, ny = e.x + e.kbX * dt, e.y + e.kbY * dt
-                if not isPointInWall(nx, ny, map) then e.x, e.y = nx, ny end
-                -- Linear friction for knockback
+                if not enemy.isPointInWall(nx, ny, map) then e.x, e.y = nx, ny end
                 e.kbX, e.kbY = e.kbX * math.exp(-8 * dt), e.kbY * math.exp(-8 * dt)
             else
                 e.kbX, e.kbY = 0, 0
             end
 
-            -- ================================================================
-            -- Charge Attack Logic
-            -- ================================================================
-            local dx, dy = px - e.x, py - e.y
-            local dist = math.sqrt(dx*dx + dy*dy)
-
-            if e.chargeCooldown > 0 then
-                e.chargeCooldown = e.chargeCooldown - dt
+            -- Aggro Perception
+            if not e.aggro then
+                local d = math.sqrt((e.x - px)^2 + (e.y - py)^2)
+                if d < cfg.perceptionRadius then e.aggro = true end
             end
 
-            -- Trigger Charge Windup
-            if e.chargeState == "none" and e.chargeCooldown <= 0 and dist < cfg.chargeRange and e.aggro then
-                e.chargeState = "winding"
-                e.chargeTimer = cfg.chargeWindup
-                local angle = math.atan2(dy, dx)
-                e.chargeDirX, e.chargeDirY = math.cos(angle), math.sin(angle)
-            
-            -- Execute Windup
-            elseif e.chargeState == "winding" then
-                e.chargeTimer = e.chargeTimer - dt
-                if e.chargeTimer <= 0 then
-                    e.chargeState = "charging"
-                    e.chargeTimer = cfg.chargeDuration
-                    e.hasDealtDamage = false
-                end
-            
-            -- Execute Dash
-            elseif e.chargeState == "charging" then
-                e.chargeTimer = e.chargeTimer - dt
-                local nx, ny = e.x + e.chargeDirX * cfg.chargeSpeed * dt, e.y + e.chargeDirY * cfg.chargeSpeed * dt
-                
-                -- Dash collision with walls
-                if not isPointInWall(nx, ny, map) then
-                    e.x, e.y = nx, ny
-                else
-                    e.chargeTimer = 0 -- Stop dash on wall hit
-                end
-
-                -- Collision with player
-                if not e.hasDealtDamage and dist < (e.size + player.size) / 2 then
-                    player.hp = player.hp - cfg.damagePerHit
-                    e.hasDealtDamage = true
-                    if _G.camera and _G.camera.addShake then _G.camera.addShake(12, 0.12) end
-                end
-
-                if e.chargeTimer <= 0 then
-                    e.chargeState = "none"
-                    e.chargeCooldown = cfg.chargeCooldown
-                end
+            -- Update behavior via type module
+            local typeMod = enemy.typeModules[e.type]
+            if typeMod then
+                typeMod.update(e, dt, player, enemy, map)
             end
         end
     end
 
-    -- ========================================================================
-    -- Aggro & Swarming Behaviors
-    -- ========================================================================
-
-    -- Perception Check
-    for _, e in ipairs(enemy.list) do
-        if not e.aggro then
-            local d = math.sqrt((e.x - px)^2 + (e.y - py)^2)
-            if d < cfg.perceptionRadius then e.aggro = true end
-        end
-    end
-
-    -- Chain Aggro (Viral alerting)
+    -- Chain Aggro
     local changed = true
     while changed do
         changed = false
@@ -366,24 +304,22 @@ function enemy.update(dt, player, map)
         end
     end
     
-    -- Slot Assignment (Sort by angle around player)
+    -- Slot Assignment
     enemy.updateSlots(px, py, map)
-    local num = cfg.numSlots
-    for i = 1, num do enemy.slots[i].occupied = false end
+    for i = 1, cfg.numSlots do enemy.slots[i].occupied = false end
     
     local sortedEnemies = {}
     for _, e in ipairs(enemy.list) do
-        if e.aggro and e.state ~= "dying" and e.chargeState == "none" then
+        if e.aggro and e.state ~= "dying" and e.attackState == "none" and e.type == "melee" then
             e.currentAngle = math.atan2(e.y - py, e.x - px)
             table.insert(sortedEnemies, e)
         end
     end
     table.sort(sortedEnemies, function(a, b) return a.currentAngle < b.currentAngle end)
     
-    -- Distribute enemies to best available slots
     for _, e in ipairs(sortedEnemies) do
         local bestAngleDiff, bestId = 999, nil
-        for i = 1, num do
+        for i = 1, cfg.numSlots do
             local s = enemy.slots[i]
             if s.valid and not s.occupied then
                 local slotAngle = math.atan2(s.y - py, s.x - px)
@@ -401,18 +337,16 @@ function enemy.update(dt, player, map)
             local tx, ty = enemy.slots[e.slotId].x, enemy.slots[e.slotId].y
             e.pathTimer = e.pathTimer - dt
             
-            -- Pathfinding refresh
-            if hasLOS(e.x, e.y, tx, ty, map) then 
+            if enemy.hasLOS(e.x, e.y, tx, ty, map) then 
                 e.path = nil
             elseif not e.path or e.slotId ~= oldSlotId or e.pathTimer <= 0 then
                 e.path = pathfinding.findPath(e.x, e.y, tx, ty, map)
                 e.pathTimer = 0.5 
             end
             
-            -- Movement execution
             local mx, my = tx, ty
             if e.path and #e.path > 0 then
-                while #e.path > 1 and hasLOS(e.x, e.y, e.path[2].x, e.path[2].y, map) do table.remove(e.path, 1) end
+                while #e.path > 1 and enemy.hasLOS(e.x, e.y, e.path[2].x, e.path[2].y, map) do table.remove(e.path, 1) end
                 if math.sqrt((e.path[1].x-e.x)^2 + (e.path[1].y-e.y)^2) < 15 then table.remove(e.path, 1) end
                 if #e.path > 0 then mx, my = e.path[1].x, e.path[1].y end
             end
@@ -420,17 +354,17 @@ function enemy.update(dt, player, map)
             local ddx, ddy = mx - e.x, my - e.y
             local ddist = math.sqrt(ddx*ddx + ddy*ddy)
             if ddist > 5 then
-                e.x, e.y = e.x + (ddx/ddist)*e.speed*dt, e.y + (ddy/ddist)*e.speed*dt
+                local nx, ny = e.x + (ddx/ddist)*e.speed*dt, e.y + (ddy/ddist)*e.speed*dt
+                if not enemy.isPointInWall(nx, ny, map) then e.x, e.y = nx, ny
+                else
+                    if not enemy.isPointInWall(nx, e.y, map) then e.x = nx
+                    elseif not enemy.isPointInWall(e.x, ny, map) then e.y = ny end
+                end
             end
-        else
-            -- No slot available, just approach
-            local ddx, ddy = px - e.x, py - e.y
-            local ddist = math.sqrt(ddx*ddx + ddy*ddy)
-            if ddist > 120 then e.x, e.y = e.x + (ddx/ddist)*e.speed*dt, e.y + (ddy/ddist)*e.speed*dt end
         end
     end
     
-    -- Local Repulsion (anti-clumping)
+    -- Local Repulsion
     for i = 1, #enemy.list do
         local e1 = enemy.list[i]
         for j = i + 1, #enemy.list do
@@ -440,8 +374,8 @@ function enemy.update(dt, player, map)
             if dist < 25 and dist > 0 then
                 local push = (25 - dist) / 2
                 local nx, ny = (dx/dist) * push, (dy/dist) * push
-                if not isPointInWall(e2.x + nx, e2.y + ny, map) then e2.x, e2.y = e2.x + nx, e2.y + ny end
-                if not isPointInWall(e1.x - nx, e1.y - ny, map) then e1.x, e1.y = e1.x - nx, e1.y - ny end
+                if not enemy.isPointInWall(e2.x + nx, e2.y + ny, map) then e2.x, e2.y = e2.x + nx, e2.y + ny end
+                if not enemy.isPointInWall(e1.x - nx, e1.y - ny, map) then e1.x, e1.y = e1.x - nx, e1.y - ny end
             end
         end
     end
@@ -457,16 +391,17 @@ function enemy.update(dt, player, map)
                 local dist = math.sqrt(distSq)
                 if dist > 0 then
                     local push = minDist - dist
-                    e.x, e.y = e.x + (dx / dist) * push, e.y + (dy / dist) * push
+                    local nx, ny = e.x + (dx / dist) * push, e.y + (dy / dist) * push
+                    if not enemy.isPointInWall(nx, ny, map) then e.x, e.y = nx, ny
+                    else
+                        if not enemy.isPointInWall(nx, e.y, map) then e.x = nx
+                        elseif not enemy.isPointInWall(e.x, ny, map) then e.y = ny end
+                    end
                 end
             end
         end
     end
 end
-
--- ============================================================================
--- RENDERING
--- ============================================================================
 
 function enemy.draw(player)
     local cfg = enemy.config
@@ -474,15 +409,6 @@ function enemy.draw(player)
     for _, e in ipairs(enemy.list) do
         local cx, cy = e.x, e.y
         
-        -- Draw Charge Lunge Telegraph
-        if e.chargeState == "winding" then
-            local p = 1 - (e.chargeTimer / cfg.chargeWindup)
-            love.graphics.setLineWidth(2)
-            love.graphics.setColor(1, 0, 0, 0.4)
-            love.graphics.line(cx, cy, cx + e.chargeDirX * cfg.chargeRange, cy + e.chargeDirY * cfg.chargeRange)
-            love.graphics.circle("line", cx + e.chargeDirX * cfg.chargeRange * p, cy + e.chargeDirY * cfg.chargeRange * p, 5)
-        end
-
         -- Additive Glow
         love.graphics.setBlendMode("add")
         for i = 10, 1, -1 do
@@ -492,20 +418,11 @@ function enemy.draw(player)
         end
         love.graphics.setBlendMode("alpha")
         
-        -- Body Rendering
-        if e.hitFlash > 0 then 
-            love.graphics.setColor(1, 1, 1, 1) -- White flash when hit
-        elseif e.chargeState == "winding" then 
-            love.graphics.setColor(1, 1, 1, 1) -- White flash during windup
-        elseif e.chargeState == "charging" then 
-            love.graphics.setColor(1, 0.5, 0) -- Orange during lunge
-        elseif e.aggro then 
-            love.graphics.setColor(e.color[1], e.color[2], e.color[3], 1)
-        else 
-            love.graphics.setColor(0.4, 0.4, 0.4, 1) -- Dull grey when idle
+        -- Delegate draw
+        local typeMod = enemy.typeModules[e.type]
+        if typeMod then
+            typeMod.draw(e)
         end
-        
-        love.graphics.rectangle("fill", cx - e.size/2, cy - e.size/2, e.size, e.size, 6)
 
         -- Health Bar
         if player then
@@ -529,15 +446,16 @@ function enemy.draw(player)
     
     -- Death Particles
     for _, p in ipairs(enemy.particles) do
-        love.graphics.setColor(1, 0.1, 0.1, p.life / p.maxLife) 
+        local r, g, b = 1, 0.1, 0.1
+        if p.color then r, g, b = p.color[1], p.color[2], p.color[3] end
+        love.graphics.setColor(r, g, b, p.life / p.maxLife) 
         love.graphics.rectangle("fill", p.x, p.y, p.size, p.size)
     end
 
     -- Debug: Combat Slots
     if cfg.showSlots and player then
         local px, py = player.x + player.size/2, player.y + player.size/2
-        local num = cfg.numSlots
-        for i = 1, num do
+        for i = 1, cfg.numSlots do
             local s = enemy.slots[i]
             love.graphics.setColor(1, 1, 1, 0.15)
             love.graphics.line(px, py, s.baseX, s.baseY)
@@ -549,10 +467,6 @@ function enemy.draw(player)
                 love.graphics.setColor(1, 0, 0, 0.4)
                 love.graphics.print("X", s.x - 4, s.y - 7)
             end
-            local oldFont = love.graphics.getFont()
-            love.graphics.setFont(debugFont or love.graphics.newFont(12))
-            love.graphics.print(tostring(i), s.x - 4, s.y + 10)
-            if oldFont then love.graphics.setFont(oldFont) end
         end
     end
 end
