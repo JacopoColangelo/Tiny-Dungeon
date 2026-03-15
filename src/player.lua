@@ -1,21 +1,25 @@
 local inventory = require("src.inventory")
 
 local player = {
+    
+    -- Stats
+    speed = 180,            -- Move Speed
+    attackSlowdown = 0.4,   -- Move Speed during attack
+    size = 24,              -- Size of the player
+    hp = 4,                 -- Health Points
+    maxHp = 4,              -- Maximum Health Points
+    soulsRun = 0,           -- Souls collected during current run
+    soulsTotal = 0,         -- Total souls collected
+    torchSize = 250,        -- Size of the torch
+    
     x = 0,
     y = 0,
     targetX = 0,
     targetY = 0,
-    speed = 180,
-    attackSlowdown = 0.4, -- Move at 40% speed during attack
-    size = 24,
-    hp = 4,
-    maxHp = 4,
-    soulsRun = 0,
-    soulsTotal = 0,
-    torchSize = 250,
     shadowPolygon = nil,
     
     -- Audio (Player specific)
+    -- TODO: Improve Player Sound Effects
     footstepSound = love.audio.newSource("assets/audio/footstep_01.wav", "static"),
     attackSound = love.audio.newSource("assets/audio/attack_sweep_02.wav", "static"),
     footstepTimer = 0,
@@ -82,10 +86,10 @@ function player.performSweep(mx, my, enemyList)
     -- Global Screen Feedback
     if hitsCount > 0 then
         if _G.camera and _G.camera.addShake then
-            _G.camera.addShake(math.min(15, 5 + (hitsCount - 1) * 2), 0.12)
+            _G.camera.addShake(math.min(25, 10 + (hitsCount - 1) * 4), 0.15)
         end
         if _G.hitStop then
-            _G.hitStop(0.07 + (hitsCount - 1) * 0.03)
+            _G.hitStop(0.12 + (hitsCount - 1) * 0.04)
         end
     end
     

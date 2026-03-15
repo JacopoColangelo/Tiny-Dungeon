@@ -3,6 +3,9 @@
 -- Each skill has a grid position (col, row), a soul cost, an optional
 -- prerequisite skill id, and an onUnlock callback applied once to the player.
 
+-- TODO: Rename Skills to Talents
+-- TODO: Add more Talents
+
 local skills = {}
 
 -- ── Registry ──────────────────────────────────────────────────────────────────

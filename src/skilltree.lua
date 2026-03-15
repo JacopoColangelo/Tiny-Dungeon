@@ -3,6 +3,11 @@
 -- Left-click to purchase a node with souls. Tooltip on hover.
 -- Inline "not enough souls" warning banner at base of panel.
 
+-- TODO: Rename Skill Tree to Talent Tree
+-- TODO: Can maybe combine with inventory as a separate tab? or maybe make a merchant point in the hub to buy talents?
+-- TODO: Make the talent tree dynamic and not hardcoded so its easy to add more talents and have them automatically positioned in the grid.
+-- TODO: Make the talent tree visually appealing.
+
 local skills   = require("src.skills")
 local hud      = require("src.hud")
 local ui_audio = require("src.ui_audio")

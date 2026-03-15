@@ -134,7 +134,13 @@ local function loadDungeon()
     local px = player.x + player.size/2
     local py = player.y + player.size/2
     for i = 1, 3 do
-        local eType = love.math.random() > 0.5 and "melee" or "ranged"
+        local r = love.math.random()
+        local eType = "melee"
+        if r > 0.8 then
+            eType = "elite_ranged"
+        elseif r > 0.4 then
+            eType = "ranged"
+        end
         enemy.spawn(map, px, py, eType)
     end
 end
@@ -161,15 +167,18 @@ function game.load()
     gameOverSound = love.audio.newSource("assets/audio/game_over.wav", "static")
 
     _G.game = game
+    _G.hud = hud
 end
 
-function game.spawnEnemyProjectile(x, y, dx, dy)
+function game.spawnEnemyProjectile(x, y, dx, dy, params)
+    local p = params or {}
     projectile.spawn(x, y, dx, dy, {
-        speed = 200,
-        size = 8,
-        damage = 0.5,
-        color = {0.6, 0.2, 1.0},
-        life = 3.0
+        speed = p.speed or 200,
+        homing = p.homing or 0,
+        size = p.size or 8,
+        damage = p.damage or 0.5,
+        color = p.color or {0.6, 0.2, 1.0},
+        life = p.life or 3.0
     })
 end
 
@@ -187,6 +196,7 @@ end
 
 function game.getCanvas() return screenCanvas end
 function game.getShader() return crtShader end
+function game.getLevelType() return levelType end
 function game.isGameOver() return gameState == "gameover" end
 
 -- ── Update ───────────────────────────────────────────────────────────────────
@@ -255,6 +265,8 @@ function game.update(dt, vx, vy, logicPaused, audioMuffled)
         lastHoveredId = currentHoveredId
     end
 
+    camera.updateShake(dt)
+
     -- Hit stop logic
     if hitStopTimer > 0 then
         hitStopTimer = hitStopTimer - dt
@@ -312,9 +324,6 @@ function game.update(dt, vx, vy, logicPaused, audioMuffled)
             hub.updateGrass(dt, player)
             hub.updateRain(dt, camera.x, camera.y)
             hub.updateClouds(dt, player)
-            if enemy.config.showSlots then
-                enemy.updateSlots(player.x + player.size/2, player.y + player.size/2, currentMap())
-            end
         end
 
         -- Click Animation
@@ -428,7 +437,10 @@ function game.keypressed(key)
         if levelType == "dungeon" then
             if key == "space" then loadDungeon() end -- regenerate dungeon
         end
-        if key == "v" then enemy.config.showSlots = not enemy.config.showSlots end
+        if key == "v" then 
+            enemy.config.showSlots = not enemy.config.showSlots 
+            print("Debug Slots: " .. tostring(enemy.config.showSlots))
+        end
         if key == "k" and levelType == "dungeon" then
             local dmg = 0.5 + love.math.random() * 0.75
             player.hp = math.max(0, player.hp - dmg)
@@ -506,7 +518,6 @@ function game.draw(canvas, isPaused, vx, vy)
 
     -- 1. Game World
     love.graphics.push()
-        camera.updateShake(love.timer.getDelta())
         local sx, sy = camera.getShakeOffset()
         love.graphics.translate(-math.floor(camera.x) + sx, -math.floor(camera.y) + sy)
         
@@ -787,3 +798,8 @@ function game.stop()
 end
 
 return game
+
+
+--TODO: Move hub related code to hub.lua
+--TODO: Move map related code to map.lua
+--TODO: Move anything that isn't game loop related to its own file

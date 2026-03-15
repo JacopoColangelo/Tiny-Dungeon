@@ -34,16 +34,16 @@ hub.saveShrineRadius = 40
 
 -- ── Rain state ───────────────────────────────────────────────────────────────
 hub.rain = {}
-hub.RAIN_COUNT = 280          -- total persistent drops
-hub.rainWX = 0                -- world scroll offset x
-hub.rainWY = 0                -- world scroll offset y
+hub.RAIN_COUNT = 280                  -- total persistent drops
+hub.rainWX = 0                        -- world scroll offset x
+hub.rainWY = 0                        -- world scroll offset y
 
 -- ── Cloud / moonlight state ──────────────────────────────────────────────────
-hub.cloudOffX = 0             -- perlin noise scroll offset X
-hub.cloudOffY = 0             -- perlin noise scroll offset Y
-hub.cloudSpeed = 1.0        -- world units/sec noise drift
-hub.moonAngle  = math.rad(-15) -- slight ray angle from vertical, pointing left
-hub.animTimer  = 0             -- Persistent timer for all visual animations
+hub.cloudOffX = 0                     -- perlin noise scroll offset X
+hub.cloudOffY = 0                     -- perlin noise scroll offset Y
+hub.cloudSpeed = 1.0                  -- world units/sec noise drift
+hub.moonAngle  = math.rad(-15)        -- slight ray angle from vertical, pointing left
+hub.animTimer  = 0                    -- Persistent timer for all visual animations
 
 -- ── Color Palette (withered grove / gothic stone) ────────────────────────────
 

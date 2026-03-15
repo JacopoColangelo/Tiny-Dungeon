@@ -16,6 +16,8 @@ function projectile.spawn(x, y, dirX, dirY, options)
         y = y,
         vx = dirX * (options.speed or 250),
         vy = dirY * (options.speed or 250),
+        speed = options.speed or 250,
+        homing = options.homing or 0, -- 0 = no homing, > 0 = steering force strength
         size = options.size or 8,
         damage = options.damage or 0.5,
         color = options.color or {0.6, 0.2, 1.0},
@@ -34,10 +36,34 @@ local function isPointInWall(x, y, currentMap)
 end
 
 function projectile.update(dt, player, currentMap)
+    local px, py = player.x + player.size/2, player.y + player.size/2
+    
     for i = #projectile.list, 1, -1 do
         local p = projectile.list[i]
         p.life = p.life - dt
         
+        -- Homing Logic (Steering)
+        if p.homing > 0 then
+            local dx, dy = px - p.x, py - p.y
+            local dist = math.sqrt(dx*dx + dy*dy)
+            if dist > 10 then
+                -- Desired velocity at current speed
+                local targetVx = (dx / dist) * p.speed
+                local targetVy = (dy / dist) * p.speed
+                
+                -- Steer current velocity towards target velocity
+                p.vx = p.vx + (targetVx - p.vx) * p.homing * dt
+                p.vy = p.vy + (targetVy - p.vy) * p.homing * dt
+                
+                -- Normalize and re-apply speed to maintain constant velocity magnitude
+                local currentV = math.sqrt(p.vx*p.vx + p.vy*p.vy)
+                if currentV > 0 then
+                    p.vx = (p.vx / currentV) * p.speed
+                    p.vy = (p.vy / currentV) * p.speed
+                end
+            end
+        end
+
         -- Spawn trail particles
         p.particleTimer = p.particleTimer - dt
         if p.particleTimer <= 0 then
@@ -64,9 +90,9 @@ function projectile.update(dt, player, currentMap)
 
         local hitWall = isPointInWall(nx, ny, currentMap)
         
-        local dx = nx - (player.x + player.size/2)
-        local dy = ny - (player.y + player.size/2)
-        local distSq = dx*dx + dy*dy
+        local dPlayerX = nx - px
+        local dPlayerY = ny - py
+        local distSq = dPlayerX*dPlayerX + dPlayerY*dPlayerY
         local hitPlayer = distSq < ((p.size + player.size)/2)^2
 
         if hitPlayer then

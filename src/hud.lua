@@ -4,6 +4,7 @@ local hud = {}
 local gothicTitleFont
 local gothicButtonFont
 local gothicSmallFont
+local gothicTinyFont
 local debugFont
 local soulIconImg
 
@@ -25,6 +26,7 @@ function hud.load()
     gothicTitleFont  = love.graphics.newFont("assets/fonts/Metamorphous-Regular.ttf", 64)
     gothicButtonFont = love.graphics.newFont("assets/fonts/Metamorphous-Regular.ttf", 20)
     gothicSmallFont  = love.graphics.newFont("assets/fonts/Metamorphous-Regular.ttf", 12)
+    gothicTinyFont   = love.graphics.newFont("assets/fonts/Metamorphous-Regular.ttf", 10)
     debugFont        = love.graphics.newFont(12)
     soulIconImg      = love.graphics.newImage("assets/sprites/soul_icon.png")
 end
@@ -33,6 +35,7 @@ function hud.getFont(name)
     if name == "title" then return gothicTitleFont
     elseif name == "button" then return gothicButtonFont
     elseif name == "small" then return gothicSmallFont
+    elseif name == "tiny" then return gothicTinyFont
     elseif name == "debug" then return debugFont
     end
 end
