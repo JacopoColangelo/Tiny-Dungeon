@@ -2,6 +2,7 @@
 -- Hand-crafted map with distinct visual palette from dungeons
 
 local shadows = require("src.lighting.shadows")
+local camera = require("src.gameplay.camera")
 
 local hub = {}
 hub.isHub = true
@@ -38,6 +39,7 @@ hub.shrinePromptAlpha = 0
 
 -- ── Rain state ───────────────────────────────────────────────────────────────
 hub.rain = {}
+hub.rainByLayer = { {}, {}, {} }
 hub.RAIN_COUNT = 280                  -- total persistent drops
 hub.rainWX = 0                        -- world scroll offset x
 hub.rainWY = 0                        -- world scroll offset y
@@ -153,6 +155,7 @@ function hub.generate()
 
     -- Initialise rain drops distributed across the world with 3 Parallax layers
     hub.rain = {}
+    hub.rainByLayer = { {}, {}, {} }
     local WW = hub.width  * hub.gridSize
     local WH = hub.height * hub.gridSize
     for i = 1, hub.RAIN_COUNT do
@@ -165,14 +168,16 @@ function hub.generate()
         local speedBase = l == 3 and 700 or (l == 2 and 450 or 250)
         local lenBase   = l == 3 and 18  or (l == 2 and 12  or 6)
         
-        table.insert(hub.rain, {
+        local drop = {
             x = love.math.random(0, WW * 1.5), -- extra width for parallax left-ward sweeping
             y = love.math.random(0, WH * 1.5),
             layer = l,
             len = love.math.random(lenBase - 2, lenBase + 4),
             speed = love.math.random(speedBase - 50, speedBase + 50),
             alpha = love.math.random() * 0.3 + (l * 0.15),
-        })
+        }
+        table.insert(hub.rain, drop)
+        table.insert(hub.rainByLayer[l], drop)
     end
 
     -- Copy layout into data
@@ -535,16 +540,19 @@ function hub.updateRain(dt, cameraX, cameraY)
     hub.rainWX = cameraX
     hub.rainWY = cameraY
 
-    for _, d in ipairs(hub.rain) do
-        -- Camera Parallax (layer 3 = closest/fastest)
-        local parallax = d.layer * 0.2
-        d.x = d.x + RAIN_DX * d.speed * dt + (dx * parallax)
-        d.y = d.y + RAIN_DY * d.speed * dt + (dy * parallax)
-        
-        -- Wrap back to top/right when drop exits bottom/left
-        if d.y > WH + 200 or d.x < -200 then
-            d.x = love.math.random(0, WW + 400)
-            d.y = -love.math.random(0, 150)
+    for layer = 1, 3 do
+        local drops = hub.rainByLayer[layer]
+        local parallax = layer * 0.2
+        for i = 1, #drops do
+            local d = drops[i]
+            d.x = d.x + RAIN_DX * d.speed * dt + (dx * parallax)
+            d.y = d.y + RAIN_DY * d.speed * dt + (dy * parallax)
+
+            -- Wrap back to top/right when drop exits bottom/left
+            if d.y > WH + 200 or d.x < -200 then
+                d.x = love.math.random(0, WW + 400)
+                d.y = -love.math.random(0, 150)
+            end
         end
     end
 end
@@ -558,25 +566,25 @@ function hub.drawRain(camera, additive)
     if additive then
         love.graphics.setBlendMode("add")
         for layer = 1, 3 do
+            local drops = hub.rainByLayer[layer]
             love.graphics.setLineWidth(layer == 3 and 2 or 1)
-            for _, d in ipairs(hub.rain) do
-                if d.layer == layer then
-                    local a = d.alpha * (layer * 0.12)
-                    love.graphics.setColor(0.7, 0.85, 1.0, a)
-                    love.graphics.line(d.x, d.y, d.x - RAIN_DX * d.len * 0.4, d.y - RAIN_DY * d.len * 0.4)
-                end
+            for i = 1, #drops do
+                local d = drops[i]
+                local a = d.alpha * (layer * 0.12)
+                love.graphics.setColor(0.7, 0.85, 1.0, a)
+                love.graphics.line(d.x, d.y, d.x - RAIN_DX * d.len * 0.4, d.y - RAIN_DY * d.len * 0.4)
             end
         end
         love.graphics.setBlendMode("alpha")
     else
         love.graphics.setBlendMode("alpha")
         for layer = 1, 3 do
+            local drops = hub.rainByLayer[layer]
             love.graphics.setLineWidth(layer == 3 and 2 or 1)
-            for _, d in ipairs(hub.rain) do
-                if d.layer == layer then
-                    love.graphics.setColor(0.75, 0.88, 1.0, d.alpha * 0.6)
-                    love.graphics.line(d.x, d.y, d.x - RAIN_DX * d.len, d.y - RAIN_DY * d.len)
-                end
+            for i = 1, #drops do
+                local d = drops[i]
+                love.graphics.setColor(0.75, 0.88, 1.0, d.alpha * 0.6)
+                love.graphics.line(d.x, d.y, d.x - RAIN_DX * d.len, d.y - RAIN_DY * d.len)
             end
         end
     end

@@ -1,30 +1,69 @@
 local map = require("src.dungeons.map")
 local shadows = require("src.lighting.shadows")
+local camera = require("src.gameplay.camera")
 
 local projectile = {}
 
 projectile.list = {}
+projectile.pool = {}
+projectile.trailPool = {}
+
+local function acquireProjectile()
+    local n = #projectile.pool
+    if n > 0 then
+        local p = projectile.pool[n]
+        projectile.pool[n] = nil
+        return p
+    end
+    return { particles = {} }
+end
+
+local function releaseTrailParticle(part)
+    projectile.trailPool[#projectile.trailPool + 1] = part
+end
+
+local function acquireTrailParticle()
+    local n = #projectile.trailPool
+    if n > 0 then
+        local part = projectile.trailPool[n]
+        projectile.trailPool[n] = nil
+        return part
+    end
+    return {}
+end
+
+local function releaseProjectile(p)
+    -- Return all trail particles to their pool first.
+    for i = #p.particles, 1, -1 do
+        releaseTrailParticle(p.particles[i])
+        p.particles[i] = nil
+    end
+    p.color = nil
+    projectile.pool[#projectile.pool + 1] = p
+end
 
 function projectile.init()
+    for i = #projectile.list, 1, -1 do
+        releaseProjectile(projectile.list[i])
+    end
     projectile.list = {}
 end
 
 function projectile.spawn(x, y, dirX, dirY, options)
     options = options or {}
-    local p = {
-        x = x,
-        y = y,
-        vx = dirX * (options.speed or 250),
-        vy = dirY * (options.speed or 250),
-        speed = options.speed or 250,
-        homing = options.homing or 0, -- 0 = no homing, > 0 = steering force strength
-        size = options.size or 8,
-        damage = options.damage or 0.5,
-        color = options.color or {0.6, 0.2, 1.0},
-        life = options.life or 3.0,
-        particles = {},
-        particleTimer = 0
-    }
+    local speed = options.speed or 250
+    local p = acquireProjectile()
+    p.x = x
+    p.y = y
+    p.vx = dirX * speed
+    p.vy = dirY * speed
+    p.speed = speed
+    p.homing = options.homing or 0 -- 0 = no homing, > 0 = steering force strength
+    p.size = options.size or 8
+    p.damage = options.damage or 0.5
+    p.color = options.color or {0.6, 0.2, 1.0}
+    p.life = options.life or 3.0
+    p.particleTimer = 0
     table.insert(projectile.list, p)
 end
 
@@ -67,13 +106,13 @@ function projectile.update(dt, player, currentMap)
         -- Spawn trail particles
         p.particleTimer = p.particleTimer - dt
         if p.particleTimer <= 0 then
-            table.insert(p.particles, {
-                x = p.x + (math.random() * 4 - 2),
-                y = p.y + (math.random() * 4 - 2),
-                life = 0.3,
-                maxLife = 0.3,
-                size = p.size * 0.5
-            })
+            local part = acquireTrailParticle()
+            part.x = p.x + (math.random() * 4 - 2)
+            part.y = p.y + (math.random() * 4 - 2)
+            part.life = 0.3
+            part.maxLife = 0.3
+            part.size = p.size * 0.5
+            p.particles[#p.particles + 1] = part
             p.particleTimer = 0.05
         end
 
@@ -81,6 +120,7 @@ function projectile.update(dt, player, currentMap)
             local part = p.particles[j]
             part.life = part.life - dt
             if part.life <= 0 then
+                releaseTrailParticle(part)
                 table.remove(p.particles, j)
             end
         end
@@ -97,9 +137,11 @@ function projectile.update(dt, player, currentMap)
 
         if hitPlayer then
             player.hp = player.hp - p.damage
-            if _G.camera and _G.camera.addShake then _G.camera.addShake(8, 0.1) end
+            if camera and camera.addShake then camera.addShake(8, 0.1) end
+            releaseProjectile(p)
             table.remove(projectile.list, i)
         elseif hitWall or p.life <= 0 then
+            releaseProjectile(p)
             table.remove(projectile.list, i)
         else
             p.x, p.y = nx, ny

@@ -79,12 +79,14 @@ function storage.load()
     local content = f:read("*all")
     f:close()
     
-    -- Use load string to evaluate the returned table
-    local chunk, err = load(content)
+    -- Parse save data in a restricted environment to avoid code execution.
+    local chunk, err = load(content, "save.data", "t", {})
     if chunk then
         local ok, result = pcall(chunk)
-        if ok then
+        if ok and type(result) == "table" then
             return result
+        elseif ok then
+            print("Storage Error: Save data did not return a table.")
         else
             print("Storage Error: Failed to execute save data: " .. tostring(result))
         end

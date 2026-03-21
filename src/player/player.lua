@@ -1,4 +1,5 @@
 local inventory = require("src.interface.inventory")
+local camera = require("src.gameplay.camera")
 
 local player = {
     
@@ -40,6 +41,29 @@ local player = {
     effects = {},
     glowParticles = {}
 }
+
+local hitStopCallback = nil
+local SWEEP_DRAW_SAMPLES = 80
+local glowParticlePool = {}
+
+local function acquireGlowParticle()
+    local n = #glowParticlePool
+    if n > 0 then
+        local p = glowParticlePool[n]
+        glowParticlePool[n] = nil
+        return p
+    end
+    return {}
+end
+
+local function releaseGlowParticle(p)
+    p.color = nil
+    glowParticlePool[#glowParticlePool + 1] = p
+end
+
+function player.setHitStopCallback(callback)
+    hitStopCallback = callback
+end
 
 function player.performSweep(mx, my, enemyList)
     local s = player.skills.sweep
@@ -85,20 +109,31 @@ function player.performSweep(mx, my, enemyList)
     
     -- Global Screen Feedback
     if hitsCount > 0 then
-        if _G.camera and _G.camera.addShake then
-            _G.camera.addShake(math.min(25, 10 + (hitsCount - 1) * 4), 0.15)
+        if camera and camera.addShake then
+            camera.addShake(math.min(25, 10 + (hitsCount - 1) * 4), 0.15)
         end
-        if _G.hitStop then
-            _G.hitStop(0.12 + (hitsCount - 1) * 0.04)
+        if hitStopCallback then
+            hitStopCallback(0.12 + (hitsCount - 1) * 0.04)
         end
     end
     
+    -- Precompute sweep pixels once to avoid per-frame random/trig in draw.
+    local sweepPoints = {}
+    for i = 1, SWEEP_DRAW_SAMPLES do
+        local r = math.sqrt(math.random()) * s.radius
+        local a = heading - s.arcAngle / 2 + math.random() * s.arcAngle
+        if math.random() > 0.2 then
+            sweepPoints[#sweepPoints + 1] = { x = math.cos(a) * r, y = math.sin(a) * r }
+        end
+    end
+
     -- Sweep visual effect (Also used to track if player is attacking)
     table.insert(player.effects, {
         type = "sweep",
         x = px, y = py,
         angle = heading,
         radius = s.radius,
+        points = sweepPoints,
         timer = 0.15, -- Duration the player is slowed
         lifetime = 0.15
     })
@@ -213,14 +248,14 @@ function player.update(dt, map)
             
             for j = 1, 25 do
                 local angle = startA + (endA - startA) * ((j-1)/25)
-                table.insert(player.glowParticles, {
-                    x = fx.x + math.cos(angle) * s.radius,
-                    y = fx.y + math.sin(angle) * s.radius,
-                    life = 0.15 + math.random() * 0.1,
-                    maxLife = 0.25,
-                    size = 10, 
-                    color = math.random() > 0.4 and {0, 0.7, 1} or {1, 1, 1}
-                })
+                local particle = acquireGlowParticle()
+                particle.x = fx.x + math.cos(angle) * s.radius
+                particle.y = fx.y + math.sin(angle) * s.radius
+                particle.life = 0.15 + math.random() * 0.1
+                particle.maxLife = 0.25
+                particle.size = 10
+                particle.color = math.random() > 0.4 and {0, 0.7, 1} or {1, 1, 1}
+                player.glowParticles[#player.glowParticles + 1] = particle
             end
         end
         if fx.timer <= 0 then table.remove(player.effects, i) end
@@ -229,7 +264,10 @@ function player.update(dt, map)
     for i = #player.glowParticles, 1, -1 do
         local p = player.glowParticles[i]
         p.life = p.life - dt
-        if p.life <= 0 then table.remove(player.glowParticles, i) end
+        if p.life <= 0 then
+            releaseGlowParticle(p)
+            table.remove(player.glowParticles, i)
+        end
     end
 end
 
@@ -243,13 +281,10 @@ function player.draw()
         if fx.type == "sweep" then
             local alpha = (fx.timer / fx.lifetime)
             love.graphics.setColor(0, 0.6, 0.8, alpha * 0.4)
-            for i = 1, 80 do
-                local r = math.sqrt(math.random()) * player.skills.sweep.radius
-                local a = fx.angle - player.skills.sweep.arcAngle/2 + math.random() * player.skills.sweep.arcAngle
-                if math.random() > 0.2 then
-                    local px, py = fx.x + math.cos(a) * r, fx.y + math.sin(a) * r
-                    love.graphics.rectangle("fill", px - px%2, py - py%2, 2, 2)
-                end
+            for i = 1, #(fx.points or {}) do
+                local point = fx.points[i]
+                local px, py = fx.x + point.x, fx.y + point.y
+                love.graphics.rectangle("fill", px - px%2, py - py%2, 2, 2)
             end
         end
     end

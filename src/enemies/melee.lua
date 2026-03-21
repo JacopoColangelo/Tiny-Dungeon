@@ -1,4 +1,5 @@
 local pathfinding = require("src.gameplay.pathfinding")
+local camera = require("src.gameplay.camera")
 
 --[[
 ============================================================================
@@ -304,7 +305,7 @@ function melee.update(e, dt, player, enemyModule, map)
         if not e.hasDealtDamage and dist < (e.size + player.size) / 2 then
             player.hp = player.hp - cfg.damagePerHit
             e.hasDealtDamage = true
-            if _G.camera and _G.camera.addShake then _G.camera.addShake(12, 0.12) end
+            if camera and camera.addShake then camera.addShake(12, 0.12) end
         end
 
         if e.attackTimer <= 0 then
@@ -371,9 +372,9 @@ function melee.draw(e)
     end
 end
 
-function melee.globalDraw(player, enemyModule)
+function melee.globalDraw(player, enemyModule, levelType, hudModule)
     -- Only draw slots in the dungeon to avoid lines to (0,0) in the hub
-    if _G.game and _G.game.getLevelType and _G.game.getLevelType() ~= "dungeon" then return end
+    if levelType ~= "dungeon" then return end
 
     local px, py = player.x + player.size/2, player.y + player.size/2
     local cfg = melee.config
@@ -394,7 +395,7 @@ function melee.globalDraw(player, enemyModule)
             local tx = s.x + math.cos(angle) * 16
             local ty = s.y + math.sin(angle) * 16
             
-            local smallFont = _G.hud and _G.hud.getFont and _G.hud.getFont("small")
+            local smallFont = hudModule and hudModule.getFont and hudModule.getFont("small")
             if smallFont then love.graphics.setFont(smallFont) end
             love.graphics.print(tostring(i), tx - 4, ty - 7)
         else

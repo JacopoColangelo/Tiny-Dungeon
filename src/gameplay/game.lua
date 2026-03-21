@@ -50,7 +50,7 @@ local fadeCallback = nil
 local fadeDungeonIndex = nil
 local FADE_SPEED = 2.5
 
-function _G.hitStop(duration)
+local function hitStop(duration)
     hitStopTimer = math.max(hitStopTimer, duration)
 end
 
@@ -102,7 +102,6 @@ function game.loadHub()
     camera.snapTo(player)
     enemy.init()
     soul.init()
-    hub.generate() 
 end
 
 local function loadDungeon(levelIndex)
@@ -172,8 +171,7 @@ function game.load()
 
     gameOverSound = love.audio.newSource("assets/audio/game_over.wav", "static")
 
-    _G.game = game
-    _G.hud = hud
+    player.setHitStopCallback(hitStop)
 end
 
 function game.spawnEnemyProjectile(x, y, dx, dy, params)
@@ -597,7 +595,7 @@ function game.draw(canvas, isPaused, vx, vy)
             map.drawWorld(hub, objectCanvas, screenCanvas)
         end
         
-        enemy.draw(player)
+        enemy.draw(player, levelType)
         soul.draw()
         if levelType == "dungeon" then
             projectile.draw()

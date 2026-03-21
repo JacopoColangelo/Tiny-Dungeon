@@ -40,55 +40,114 @@ function pathfinding.findPath(startX, startY, endX, endY, map)
 
     if startGX == endGX and startGY == endGY then return {} end
 
-    local openSet = {}
     local closedSet = {}
     local cameFrom = {}
     local gScore = {}
     local fScore = {}
+    local nodePos = {}
 
-    local startKey = get_node_key(startGX, startGY)
-    openSet[startKey] = {x = startGX, y = startGY}
-    gScore[startKey] = 0
-    fScore[startKey] = heuristic(startGX, startGY, endGX, endGY)
+    -- Min-heap for open set keys, plus key->heap-index map.
+    local openHeap = {}
+    local openIndex = {}
 
-    local function getLowestF()
-        local bestNode = nil
-        local bestScore = math.huge
-        local bestKey = nil
-        for key, node in pairs(openSet) do
-            if fScore[key] < bestScore then
-                bestScore = fScore[key]
-                bestNode = node
-                bestKey = key
-            end
-        end
-        return bestNode, bestKey
+    local function heapSwap(i, j)
+        openHeap[i], openHeap[j] = openHeap[j], openHeap[i]
+        openIndex[openHeap[i]] = i
+        openIndex[openHeap[j]] = j
     end
 
-    while next(openSet) do
-        local current, currentKey = getLowestF()
+    local function heapLess(i, j)
+        local ki = openHeap[i]
+        local kj = openHeap[j]
+        local fi = fScore[ki] or math.huge
+        local fj = fScore[kj] or math.huge
+        if fi == fj then
+            return (gScore[ki] or math.huge) > (gScore[kj] or math.huge)
+        end
+        return fi < fj
+    end
+
+    local function siftUp(i)
+        while i > 1 do
+            local parent = math.floor(i / 2)
+            if heapLess(i, parent) then
+                heapSwap(i, parent)
+                i = parent
+            else
+                break
+            end
+        end
+    end
+
+    local function siftDown(i)
+        while true do
+            local left = i * 2
+            local right = left + 1
+            local smallest = i
+            if left <= #openHeap and heapLess(left, smallest) then smallest = left end
+            if right <= #openHeap and heapLess(right, smallest) then smallest = right end
+            if smallest ~= i then
+                heapSwap(i, smallest)
+                i = smallest
+            else
+                break
+            end
+        end
+    end
+
+    local function pushOpen(key)
+        openHeap[#openHeap + 1] = key
+        openIndex[key] = #openHeap
+        siftUp(#openHeap)
+    end
+
+    local function popOpen()
+        local root = openHeap[1]
+        local last = openHeap[#openHeap]
+        openHeap[#openHeap] = nil
+        openIndex[root] = nil
+        if #openHeap > 0 then
+            openHeap[1] = last
+            openIndex[last] = 1
+            siftDown(1)
+        end
+        return root
+    end
+
+    local function touchOpen(key)
+        local idx = openIndex[key]
+        if idx then
+            siftUp(idx)
+            siftDown(idx)
+        else
+            pushOpen(key)
+        end
+    end
+
+    local startKey = get_node_key(startGX, startGY)
+    nodePos[startKey] = {x = startGX, y = startGY}
+    gScore[startKey] = 0
+    fScore[startKey] = heuristic(startGX, startGY, endGX, endGY)
+    pushOpen(startKey)
+
+    while #openHeap > 0 do
+        local currentKey = popOpen()
+        local current = nodePos[currentKey]
         if current.x == endGX and current.y == endGY then
             -- Reconstruct path
             local path = {}
             local tempKey = currentKey
             while cameFrom[tempKey] do
+                local node = nodePos[tempKey]
                 -- Convert back to pixels (center of tile)
-                local px = (current.x - 1) * map.gridSize + map.gridSize/2
-                local py = (current.y - 1) * map.gridSize + map.gridSize/2
+                local px = (node.x - 1) * map.gridSize + map.gridSize/2
+                local py = (node.y - 1) * map.gridSize + map.gridSize/2
                 table.insert(path, 1, {x = px, y = py})
                 tempKey = cameFrom[tempKey]
-                current = closedSet[tempKey] or openSet[tempKey] 
-                -- Note: current needs to be updated based on tempKey
-                if tempKey then
-                    local coords = {}
-                    for v in tempKey:gmatch("%d+") do table.insert(coords, tonumber(v)) end
-                    current = {x = coords[1], y = coords[2]}
-                end
             end
             return path
         end
 
-        openSet[currentKey] = nil
         closedSet[currentKey] = true
 
         local neighbors = {
@@ -104,11 +163,12 @@ function pathfinding.findPath(startX, startY, endX, endY, map)
                     local neighborKey = get_node_key(neighbor.x, neighbor.y)
                     if not closedSet[neighborKey] then
                         local tentativeG = gScore[currentKey] + 1
-                        if not openSet[neighborKey] or tentativeG < gScore[neighborKey] then
+                        if gScore[neighborKey] == nil or tentativeG < gScore[neighborKey] then
                             cameFrom[neighborKey] = currentKey
                             gScore[neighborKey] = tentativeG
                             fScore[neighborKey] = gScore[neighborKey] + heuristic(neighbor.x, neighbor.y, endGX, endGY)
-                            openSet[neighborKey] = neighbor
+                            nodePos[neighborKey] = neighbor
+                            touchOpen(neighborKey)
                         end
                     end
                 end

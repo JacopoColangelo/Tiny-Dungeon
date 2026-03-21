@@ -1,4 +1,5 @@
 local pathfinding = require("src.gameplay.pathfinding")
+local projectile = require("src.gameplay.projectile")
 
 --[[
 ============================================================================
@@ -275,13 +276,11 @@ local function handleCastingAndWarping(e, dt, dist, dx, dy, hasSight, enemyModul
         if e.attackTimer <= 0 then
             e.attackState = "none"
             e.attackCooldown = cfg.castCooldown
-            if _G.game and _G.game.spawnEnemyProjectile then
-                _G.game.spawnEnemyProjectile(e.x, e.y, e.attackDirX, e.attackDirY, {
-                    speed = cfg.projSpeed,
-                    color = cfg.color,
-                    damage = cfg.damagePerHit
-                })
-            end
+            projectile.spawn(e.x, e.y, e.attackDirX, e.attackDirY, {
+                speed = cfg.projSpeed,
+                color = cfg.color,
+                damage = cfg.damagePerHit
+            })
         end
         
     elseif e.attackState == "warping" then
@@ -368,8 +367,8 @@ function ranged.draw(e)
     end
 end
 
-function ranged.globalDraw(player, enemyModule)
-    if _G.game and _G.game.getLevelType and _G.game.getLevelType() ~= "dungeon" then return end
+function ranged.globalDraw(player, enemyModule, levelType)
+    if levelType ~= "dungeon" then return end
 
     for _, e in ipairs(enemyModule.list) do
         if e.type == "ranged" and e.path and #e.path > 0 then

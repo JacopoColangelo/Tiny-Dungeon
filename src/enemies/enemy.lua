@@ -1,5 +1,6 @@
 local pathfinding = require("src.gameplay.pathfinding")
 local soul = require("src.gameplay.soul")
+local hud = require("src.interface.hud")
 
 local enemy = {}
 
@@ -11,6 +12,7 @@ enemy.list = {}
 enemy.particles = {}
 enemy.typeModules = {}
 enemy.showSlots = false
+enemy.particlePool = {}
 
 enemy.config = {
     minSpawnDist = 400,     -- Minimum pixels away from player to spawn
@@ -55,15 +57,17 @@ function enemy.hasLOS(x1, y1, x2, y2, map)
 end
 
 function enemy.addParticle(x, y, color)
-    table.insert(enemy.particles, {
-        x = x, y = y,
-        vx = (math.random() * 10 - 5),
-        vy = (math.random() * 10 - 5),
-        life = 0.2,
-        maxLife = 0.2,
-        size = math.random(2, 6),
-        color = color
-    })
+    local part = table.remove(enemy.particlePool)
+    if not part then part = {} end
+    part.x = x
+    part.y = y
+    part.vx = (math.random() * 10 - 5)
+    part.vy = (math.random() * 10 - 5)
+    part.life = 0.2
+    part.maxLife = 0.2
+    part.size = math.random(2, 6)
+    part.color = color
+    table.insert(enemy.particles, part)
 end
 
 -- ============================================================================
@@ -205,7 +209,7 @@ local function drawHealthBarAndName(e, player)
 
         -- Display Name & Level Tag
         if e.displayName then
-            local tinyFont = _G.hud and _G.hud.getFont and _G.hud.getFont("tiny")
+            local tinyFont = hud and hud.getFont and hud.getFont("tiny")
             if tinyFont then
                 love.graphics.setFont(tinyFont)
                 local levelStr = tostring(e.level or 1)
@@ -244,6 +248,11 @@ end
 
 function enemy.init()
     enemy.list = {}
+    for i = #enemy.particles, 1, -1 do
+        local part = enemy.particles[i]
+        part.color = nil
+        enemy.particlePool[#enemy.particlePool + 1] = part
+    end
     enemy.particles = {}
     
     -- Load Enemy Types
@@ -353,14 +362,17 @@ function enemy.instantiate(eType, x, y)
             local spd = cfg.deathParticleSpeed or 150
             local life = cfg.deathParticleLife or 0.5
             for p = 1, pCount do
-                table.insert(enemy.particles, {
-                    x = self.x, y = self.y,
-                    vx = math.random(-spd, spd), 
-                    vy = math.random(-spd, spd),
-                    life = life, 
-                    maxLife = life, 
-                    size = math.random(2, 4)
-                })
+                local part = table.remove(enemy.particlePool)
+                if not part then part = {} end
+                part.x = self.x
+                part.y = self.y
+                part.vx = math.random(-spd, spd)
+                part.vy = math.random(-spd, spd)
+                part.life = life
+                part.maxLife = life
+                part.size = math.random(2, 4)
+                part.color = nil
+                table.insert(enemy.particles, part)
             end
             
             -- Soul Drop
@@ -418,7 +430,11 @@ function enemy.update(dt, player, map)
         local p = enemy.particles[i]
         p.life = p.life - dt
         p.x, p.y = p.x + p.vx * dt, p.y + p.vy * dt
-        if p.life <= 0 then table.remove(enemy.particles, i) end
+        if p.life <= 0 then
+            p.color = nil
+            table.insert(enemy.particlePool, p)
+            table.remove(enemy.particles, i)
+        end
     end
 
     -- 2. Update Enemy Logic
@@ -450,18 +466,33 @@ function enemy.update(dt, player, map)
         end
     end
 
-    -- 3. Chain Aggro Processing
-    local changed = true
-    while changed do
-        changed = false
-        for _, e1 in ipairs(enemy.list) do
-            if e1.aggro then
-                local t1 = enemy.typeModules[e1.type]
-                local gRad = (t1 and t1.config and t1.config.groupAggroRadius) or 350
-                for _, e2 in ipairs(enemy.list) do
-                    if not e2.aggro and math.sqrt((e1.x-e2.x)^2 + (e1.y-e2.y)^2) < gRad then
-                        e2.aggro, changed = true, true
-                    end
+    -- 3. Chain Aggro Processing (BFS expansion to avoid repeated full passes)
+    local queue = {}
+    local qHead, qTail = 1, 0
+    for i = 1, #enemy.list do
+        local e = enemy.list[i]
+        if e.aggro then
+            qTail = qTail + 1
+            queue[qTail] = e
+        end
+    end
+
+    while qHead <= qTail do
+        local e1 = queue[qHead]
+        qHead = qHead + 1
+        local t1 = enemy.typeModules[e1.type]
+        local gRad = (t1 and t1.config and t1.config.groupAggroRadius) or 350
+        local gRadSq = gRad * gRad
+
+        for i = 1, #enemy.list do
+            local e2 = enemy.list[i]
+            if not e2.aggro then
+                local dx = e1.x - e2.x
+                local dy = e1.y - e2.y
+                if dx * dx + dy * dy < gRadSq then
+                    e2.aggro = true
+                    qTail = qTail + 1
+                    queue[qTail] = e2
                 end
             end
         end
@@ -478,7 +509,7 @@ function enemy.update(dt, player, map)
     applySharedPhysics(map)
 end
 
-function enemy.draw(player)
+function enemy.draw(player, levelType)
     -- 1. Draw Enemies
     for _, e in ipairs(enemy.list) do
         local cx, cy = e.x, e.y
@@ -506,7 +537,7 @@ function enemy.draw(player)
     -- 2. Global Debug Drawing (e.g., Target Slots)
     if enemy.showSlots and player then
         for _, mod in pairs(enemy.typeModules) do
-            if mod.globalDraw then mod.globalDraw(player, enemy) end
+            if mod.globalDraw then mod.globalDraw(player, enemy, levelType, hud) end
         end
     end
 

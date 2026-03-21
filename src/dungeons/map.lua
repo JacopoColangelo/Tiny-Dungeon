@@ -11,6 +11,62 @@ map.spawnX = 0
 map.spawnY = 0
 map.portalCollisionRadius = 15
 map.portalActive = false
+map.staticCanvas = nil
+
+local function rebuildStaticCanvas()
+    local w = map.width * map.gridSize
+    local h = map.height * map.gridSize
+    map.staticCanvas = love.graphics.newCanvas(w, h)
+
+    love.graphics.setCanvas(map.staticCanvas)
+    love.graphics.clear(0, 0, 0, 1)
+
+    -- Draw walls and floors once per generated dungeon.
+    for y = 1, map.height do
+        for x = 1, map.width do
+            local px, py = (x - 1) * map.gridSize, (y - 1) * map.gridSize
+            if map.data[y][x] == 1 then
+                love.graphics.setColor(0, 0, 0, 1)
+                love.graphics.rectangle("fill", px, py, map.gridSize, map.gridSize)
+            else
+                love.graphics.setColor(0.12, 0.15, 0.14)
+                love.graphics.rectangle("fill", px, py, map.gridSize, map.gridSize)
+            end
+        end
+    end
+
+    -- Floor textures
+    for _, dec in ipairs(map.decorations) do
+        love.graphics.setColor(dec.color[1], dec.color[2], dec.color[3], 1)
+        love.graphics.circle("fill", dec.x, dec.y, dec.r)
+    end
+
+    -- Draw textured wall lines once with fixed jitter offsets.
+    love.graphics.setLineStyle("smooth")
+    love.graphics.setLineJoin("bevel")
+    for _, loop in ipairs(map.contours) do
+        if #loop >= 4 then
+            love.graphics.setLineWidth(10)
+            love.graphics.setColor(0.04, 0.04, 0.06, 1)
+            love.graphics.line(loop)
+
+            love.graphics.setLineWidth(3)
+            love.graphics.setColor(0.5, 0.55, 0.52, 1)
+            love.graphics.line(loop)
+
+            love.graphics.setLineWidth(1.5)
+            love.graphics.setColor(0.6, 0.65, 0.62, 1)
+            local jx = love.math.random() * 0.5
+            local jy = love.math.random() * 0.5
+            love.graphics.push()
+            love.graphics.translate(jx, jy)
+            love.graphics.line(loop)
+            love.graphics.pop()
+        end
+    end
+
+    love.graphics.setCanvas()
+end
 
 function map.getCurrentLevel() return map.currentLevelIndex end
 function map.setCurrentLevel(index) map.currentLevelIndex = index end
@@ -276,6 +332,8 @@ function map.generate(config)
             table.insert(map.contours, smoothed)
         end
     end
+
+    rebuildStaticCanvas()
 end
 
 function map.update(dt, player, enemyModule, soulModule, projectileModule)
@@ -285,55 +343,9 @@ function map.update(dt, player, enemyModule, soulModule, projectileModule)
 end
 
 function map.draw()
-    -- Draw walls and floors
-    for y = 1, map.height do
-        for x = 1, map.width do
-            local px, py = (x-1)*map.gridSize, (y-1)*map.gridSize
-            if map.data[y][x] == 1 then
-                love.graphics.setColor(0, 0, 0, 1) 
-                love.graphics.rectangle("fill", px, py, map.gridSize, map.gridSize)
-            else
-                love.graphics.setColor(0.12, 0.15, 0.14) 
-                love.graphics.rectangle("fill", px, py, map.gridSize, map.gridSize)
-            end
-        end
-    end
-    
-    -- Floor textures
-    for _, dec in ipairs(map.decorations) do
-        love.graphics.setColor(dec.color[1], dec.color[2], dec.color[3], 1)
-        love.graphics.circle("fill", dec.x, dec.y, dec.r)
-    end
-    
-    -- Draw textured, curved wall lines
-    love.graphics.setLineStyle("smooth")
-    love.graphics.setLineJoin("bevel")
-
-    -- 1. Base Layer (Dark shadow depth)
-    for _, loop in ipairs(map.contours) do
-        if #loop >= 4 then
-            love.graphics.setLineWidth(10)
-            love.graphics.setColor(0.04, 0.04, 0.06, 1)
-            love.graphics.line(loop)
-        end
-    end
-    
-    -- 2. Surface Highlight (Reactive to lighting)
-    for _, loop in ipairs(map.contours) do
-        if #loop >= 4 then
-            love.graphics.setLineWidth(3)
-            -- Much brighter base highlight to ensure multiply blending makes it visible
-            love.graphics.setColor(0.5, 0.55, 0.52, 1)
-            love.graphics.line(loop)
-            
-            -- Sub-highlight for texture jitter
-            love.graphics.setLineWidth(1.5)
-            love.graphics.setColor(0.6, 0.65, 0.62, 1)
-            love.graphics.push()
-            love.graphics.translate(love.math.random()*0.5, love.math.random()*0.5)
-            love.graphics.line(loop)
-            love.graphics.pop()
-        end
+    if map.staticCanvas then
+        love.graphics.setColor(1, 1, 1, 1)
+        love.graphics.draw(map.staticCanvas, 0, 0)
     end
 end
 

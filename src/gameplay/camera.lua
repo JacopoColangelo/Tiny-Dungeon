@@ -56,7 +56,4 @@ function camera.snapTo(player)
     camera.forceSnap = true
 end
 
--- Expose globally so player.lua can reference it for screen feedback
-_G.camera = camera
-
 return camera

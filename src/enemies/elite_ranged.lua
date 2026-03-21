@@ -1,4 +1,5 @@
 local pathfinding = require("src.gameplay.pathfinding")
+local projectile = require("src.gameplay.projectile")
 
 --[[
 ============================================================================
@@ -276,14 +277,12 @@ local function handleAttackingAndWarping(e, dt, dist, dx, dy, hasSight, enemyMod
             local spread = (love.math.random() - 0.5) * cfg.spreadAngle
             local ax, ay = math.cos(baseAngle + spread), math.sin(baseAngle + spread)
             
-            if _G.game and _G.game.spawnEnemyProjectile then
-                _G.game.spawnEnemyProjectile(e.x, e.y, ax, ay, {
-                    speed = cfg.projSpeed,
-                    homing = cfg.homingStrength,
-                    color = cfg.color,
-                    damage = cfg.damagePerHit
-                })
-            end
+            projectile.spawn(e.x, e.y, ax, ay, {
+                speed = cfg.projSpeed,
+                homing = cfg.homingStrength,
+                color = cfg.color,
+                damage = cfg.damagePerHit
+            })
             
             e.burstsRemaining = e.burstsRemaining - 1
             e.burstTimer = cfg.burstInterval
@@ -384,8 +383,8 @@ function elite.draw(e)
     end
 end
 
-function elite.globalDraw(player, enemyModule)
-    if _G.game and _G.game.getLevelType and _G.game.getLevelType() ~= "dungeon" then return end
+function elite.globalDraw(player, enemyModule, levelType)
+    if levelType ~= "dungeon" then return end
     
     for _, e in ipairs(enemyModule.list) do
         if e.type == "elite_ranged" and e.path and #e.path > 0 then
