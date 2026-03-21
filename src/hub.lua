@@ -32,6 +32,10 @@ hub.saveShrineX = 7
 hub.saveShrineY = 17
 hub.saveShrineRadius = 40
 
+-- Interaction Prompts (Moved from game.lua)
+hub.portalPromptAlpha = 0
+hub.shrinePromptAlpha = 0
+
 -- ── Rain state ───────────────────────────────────────────────────────────────
 hub.rain = {}
 hub.RAIN_COUNT = 280                  -- total persistent drops
@@ -384,6 +388,36 @@ function hub.generate()
     shadows.updateMapEdges(hub)
 end
 
+function hub.update(dt, player, levelType, currentMapObj)
+    hub.animTimer = hub.animTimer + dt
+    
+    if levelType == "hub" then
+        hub.updateRain(dt, camera.x, camera.y)
+        hub.updateClouds(dt, player)
+        hub.updateGrass(dt, player)
+    end
+    
+    hub.updatePortal(dt, currentMapObj)
+    
+    -- Prompt fading logic (Now uses currentMapObj for level-awareness)
+    local px, py = player.x + player.size/2, player.y + player.size/2
+    if currentMapObj.isOnPortal(px, py) then
+        hub.portalPromptAlpha = math.min(1, hub.portalPromptAlpha + dt * 4)
+    else
+        hub.portalPromptAlpha = math.max(0, hub.portalPromptAlpha - dt * 4)
+    end
+
+    if levelType == "hub" then
+        if hub.isOnSaveShrine(px, py) then
+            hub.shrinePromptAlpha = math.min(1, hub.shrinePromptAlpha + dt * 4)
+        else
+            hub.shrinePromptAlpha = math.max(0, hub.shrinePromptAlpha - dt * 4)
+        end
+    else
+        hub.shrinePromptAlpha = 0
+    end
+end
+
 function hub.updateGrass(dt, player)
     local t = love.timer.getTime()
     local px = player.x + player.size / 2
@@ -697,8 +731,94 @@ function hub.draw(camera)
     if camera and hub.cloudShader then
         hub.drawClouds(camera)
     end
+end
+
+function hub.drawWorld(camera, player, highlightShader, objectCanvas, screenCanvas)
+    hub.draw(camera)
+    hub.drawRain(camera, false)   -- base rain pass (before lighting)
     
-    -- Contour lines are replaced by the perimeter canopy. End draw.
+    -- Draw portal highlight
+    if hub.portalPromptAlpha > 0.01 then
+        love.graphics.setCanvas(objectCanvas)
+        love.graphics.clear(0, 0, 0, 0)
+        love.graphics.push()
+        love.graphics.origin()
+        hub.drawPortal(100, 100, 60)
+        love.graphics.pop()
+        
+        love.graphics.setCanvas(screenCanvas) 
+        local px, py = hub.getPortalWorldPos()
+        highlightShader:send("highlightColor", {0.8, 0.6, 1.0})
+        highlightShader:send("stepSize", {1/200, 1/200})
+        love.graphics.setShader(highlightShader)
+        love.graphics.setColor(1, 1, 1, hub.portalPromptAlpha * 0.6)
+        love.graphics.draw(objectCanvas, px - 100, py - 100)
+        love.graphics.setShader()
+    end
+    
+    local px, py = hub.getPortalWorldPos()
+    hub.drawPortal(px, py, 60)
+end
+
+function hub.drawPrompts(camera, hudModule, levelType, currentMapObj)
+    local w, h = 1280, 720
+    local sx, sy = camera.getShakeOffset()
+    
+    if hub.portalPromptAlpha > 0 then
+        local tx_world, ty_world = currentMapObj.getPortalWorldPos()
+        local tx = tx_world - math.floor(camera.x) + sx
+        local ty = ty_world - math.floor(camera.y) + sy
+        
+        local label = (levelType == "hub") and "Sanctuary Portal" or "Hub Portal"
+        local smallFont = hudModule.getFont("small")
+        love.graphics.setFont(smallFont)
+        local ltw = smallFont:getWidth(label)
+        
+        local bob = math.sin(hub.animTimer * 1.5) * 5
+        local ly = ty - 80 + bob
+        
+        love.graphics.setColor(0, 0, 0, 0.8 * hub.portalPromptAlpha)
+        love.graphics.print(label, tx - ltw/2 + 2, ly + 2)
+        love.graphics.setColor(1, 1, 1, 1.0 * hub.portalPromptAlpha)
+        love.graphics.print(label, tx - ltw/2, ly)
+
+        -- Universal interaction hint
+        local hintText = "[E] to Interact"
+        local hintW = smallFont:getWidth(hintText)
+        local hpx, hpy = 1280/2 - hintW/2, 600
+        love.graphics.setColor(0, 0, 0, 0.5 * hub.portalPromptAlpha)
+        love.graphics.rectangle("fill", hpx - 10, hpy - 5, hintW + 20, 26, 4)
+        love.graphics.setColor(0.7, 0.9, 1.0, 0.9 * hub.portalPromptAlpha)
+        love.graphics.print(hintText, hpx, hpy)
+    end
+
+    if levelType == "hub" and hub.shrinePromptAlpha > 0 then
+        local tx_world, ty_world = hub.getSaveShrineWorldPos()
+        local tx = tx_world - math.floor(camera.x) + sx
+        local ty = ty_world - math.floor(camera.y) + sy
+        
+        local label = "Save Shrine"
+        local smallFont = hudModule.getFont("small")
+        love.graphics.setFont(smallFont)
+        local ltw = smallFont:getWidth(label)
+        
+        local bob = math.sin(hub.animTimer * 1.5) * 5
+        local ly = ty - 60 + bob
+        
+        love.graphics.setColor(0, 0, 0, 0.8 * hub.shrinePromptAlpha)
+        love.graphics.print(label, tx - ltw/2 + 2, ly + 2)
+        love.graphics.setColor(0.4, 0.8, 1.0, 1.0 * hub.shrinePromptAlpha)
+        love.graphics.print(label, tx - ltw/2, ly)
+
+        -- Universal interaction hint
+        local hintText = "[E] to Save"
+        local hintW = smallFont:getWidth(hintText)
+        local hpx, hpy = 1280/2 - hintW/2, 600
+        love.graphics.setColor(0, 0, 0, 0.5 * hub.shrinePromptAlpha)
+        love.graphics.rectangle("fill", hpx - 10, hpy - 5, hintW + 20, 26, 4)
+        love.graphics.setColor(0.7, 0.9, 1.0, 0.9 * hub.shrinePromptAlpha)
+        love.graphics.print(hintText, hpx, hpy)
+    end
 end
 
 function hub.drawSaveShrine()

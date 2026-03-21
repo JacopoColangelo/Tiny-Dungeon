@@ -10,23 +10,7 @@ local enemy = {}
 enemy.list = {}
 enemy.particles = {}
 enemy.typeModules = {}
-
--- Audio Assets (Shared)
--- TODO: Separate sounds for each enemy type
-enemy.hitSound = love.audio.newSource("assets/audio/enemy_hit.wav", "static")
-enemy.deathSound = love.audio.newSource("assets/audio/enemy_death.wav", "static")
-
--- ============================================================================
--- DESIGNER CONFIGURATION (Shared)
--- ============================================================================
-
--- TODO: Separate config for each enemy type
-enemy.config = {
-    hitFlashDuration = 0.15,    -- How long they flash white when hit
-    deathParticleCount = 15,    -- Number of particles when an enemy dies
-    deathParticleSpeed = 150,   -- Speed of the particles
-    deathParticleLife = 0.5,    -- Life of the particles
-}
+enemy.showSlots = false
 
 -- ============================================================================
 -- HELPERS (Exposed to enemy types)
@@ -95,8 +79,39 @@ function enemy.init()
     end
 end
 
--- TODO: Separate spawn rates for each enemy type, check if code is in game.lua and if so move it here. Why is spawn enemy code in game.lua?
--- TODO: Add enemy roaming behavior
+function enemy.spawnAll(map, player, totalCR)
+    local accumulatedCR = 0
+    local px, py = player.x + player.size/2, player.y + player.size/2
+    
+    -- Pickable types based on weights
+    local types = {}
+    for name, mod in pairs(enemy.typeModules) do
+        table.insert(types, {name = name, weight = mod.config.spawnWeight or 1, cr = mod.config.challengeRating or 1})
+    end
+    
+    local totalWeight = 0
+    for _, t in ipairs(types) do totalWeight = totalWeight + t.weight end
+    
+    local attempts = 0
+    while accumulatedCR < totalCR and attempts < 100 do
+        attempts = attempts + 1
+        local r = love.math.random() * totalWeight
+        local picked = types[1]
+        local currentWeight = 0
+        for _, t in ipairs(types) do
+            currentWeight = currentWeight + t.weight
+            if r <= currentWeight then
+                picked = t
+                break
+            end
+        end
+        
+        if accumulatedCR + picked.cr <= totalCR or accumulatedCR == 0 then
+            enemy.spawn(map, px, py, picked.name)
+            accumulatedCR = accumulatedCR + picked.cr
+        end
+    end
+end
 
 function enemy.spawn(map, px, py, eType)
     eType = eType or "melee"
@@ -136,6 +151,11 @@ function enemy.spawn(map, px, py, eType)
             kbY = 0,
             path = nil,
             pathTimer = 0,
+            
+            -- Roaming state
+            roamTargetX = spawnX,
+            roamTargetY = spawnY,
+            roamTimer = love.math.random(1, 4)
         }
         
         typeMod.create(e)
@@ -143,22 +163,24 @@ function enemy.spawn(map, px, py, eType)
         function e:takeDamage(damage, kx, ky)
             if self.state == "dying" then return end
             
+            local cfg = typeMod.config
             self.hp = self.hp - damage
-            self.hitFlash = enemy.config.hitFlashDuration
+            self.hitFlash = cfg.hitFlashDuration or 0.15
             
             if self.hp <= 0 then
-                enemy.deathSound:play()
+                if typeMod.deathSound then typeMod.deathSound:play() end
                 self.state = "dying"
                 
-                local cfg = typeMod.config
-                for p = 1, enemy.config.deathParticleCount do
-                    local spd = enemy.config.deathParticleSpeed
+                local pCount = cfg.deathParticleCount or 15
+                local spd = cfg.deathParticleSpeed or 150
+                local life = cfg.deathParticleLife or 0.5
+                for p = 1, pCount do
                     table.insert(enemy.particles, {
                         x = self.x, y = self.y,
                         vx = math.random(-spd, spd), 
                         vy = math.random(-spd, spd),
-                        life = enemy.config.deathParticleLife, 
-                        maxLife = enemy.config.deathParticleLife, 
+                        life = life, 
+                        maxLife = life, 
                         size = math.random(2, 4)
                     })
                 end
@@ -168,7 +190,7 @@ function enemy.spawn(map, px, py, eType)
                     soul.spawn(self.x, self.y, amount)
                 end
             else
-                enemy.hitSound:play()
+                if typeMod.hitSound then typeMod.hitSound:play() end
                 self.kbX, self.kbY = kx, ky
                 
                 if self.attackState == "winding" or self.attackState == "charging" then
@@ -183,7 +205,6 @@ function enemy.spawn(map, px, py, eType)
 end
 
 function enemy.update(dt, player, map)
-    local cfg = enemy.config
     local px, py = player.x + player.size/2, player.y + player.size/2
     
     -- Update Blood/Death Particles
@@ -200,6 +221,9 @@ function enemy.update(dt, player, map)
         if e.state == "dying" then
             table.remove(enemy.list, i)
         else
+            local typeMod = enemy.typeModules[e.type]
+            local cfg = typeMod and typeMod.config
+            
             if e.hitFlash > 0 then e.hitFlash = e.hitFlash - dt end
             
             -- Apply Knockback (with Axis Sliding)
@@ -227,17 +251,52 @@ function enemy.update(dt, player, map)
                 e.kbX, e.kbY = 0, 0
             end
 
-            -- Aggro Perception (Config from type module)
-            if not e.aggro then
-                local pRad = (cfg and cfg.perceptionRadius) or 250
+            -- Aggro Perception
+            if not e.aggro and cfg then
+                local pRad = cfg.perceptionRadius or 250
                 local d = math.sqrt((e.x - px)^2 + (e.y - py)^2)
                 if d < pRad then e.aggro = true end
             end
 
-            -- behavior via type module
-            local typeMod = enemy.typeModules[e.type]
-            if typeMod then
-                typeMod.update(e, dt, player, enemy, map)
+            -- behavior via type module or roaming
+            if e.aggro then
+                if typeMod then
+                    typeMod.update(e, dt, player, enemy, map)
+                end
+            else
+                -- Roaming Behavior
+                if cfg then
+                    e.roamTimer = e.roamTimer - dt
+                    if e.roamTimer <= 0 then
+                        local rRad = cfg.roamRadius or 150
+                        local angle = love.math.random() * math.pi * 2
+                        local dist = love.math.random() * rRad
+                        local tx = e.x + math.cos(angle) * dist
+                        local ty = e.y + math.sin(angle) * dist
+                        
+                        -- Check if target is valid
+                        if not enemy.isPointInWall(tx, ty, map) and enemy.hasLOS(e.x, e.y, tx, ty, map) then
+                            e.roamTargetX, e.roamTargetY = tx, ty
+                            e.roamTimer = love.math.random(cfg.roamWaitMin or 2, cfg.roamWaitMax or 5)
+                        else
+                            e.roamTimer = 1.0 -- retry soon
+                        end
+                    end
+                    
+                    local rdx, rdy = e.roamTargetX - e.x, e.roamTargetY - e.y
+                    local rdist = math.sqrt(rdx*rdx + rdy*rdy)
+                    if rdist > 5 then
+                        local rSpd = cfg.roamSpeed or 40
+                        local moveX = (rdx / rdist) * rSpd * dt
+                        local moveY = (rdy / rdist) * rSpd * dt
+                        local radius = e.size / 2
+                        if not enemy.isCircleColliding(e.x + moveX, e.y + moveY, radius, map) then
+                            e.x, e.y = e.x + moveX, e.y + moveY
+                        else
+                            e.roamTargetX, e.roamTargetY = e.x, e.y -- Stop roaming if hit wall
+                        end
+                    end
+                end
             end
         end
     end
@@ -290,13 +349,13 @@ function enemy.update(dt, player, map)
         for _, e in ipairs(enemy.list) do
             local dx, dy = e.x - hpx, e.y - hpy
             local distSq = dx*dx + dy*dy
-            local minDist = (map.portalCollisionRadius or 30) + e.size/2
+            local minDist = (map.portalCollisionRadius or 30) + (e.size or 20)/2
             if distSq < minDist * minDist then
                 local dist = math.sqrt(distSq)
                 if dist > 0 then
                     local push = minDist - dist
                     local nx, ny = e.x + (dx / dist) * push, e.y + (dy / dist) * push
-                    local r = e.size / 2
+                    local r = (e.size or 20) / 2
                     if not enemy.isCircleColliding(nx, ny, r, map) then e.x, e.y = nx, ny
                     else
                         if not enemy.isCircleColliding(nx, e.y, r, map) then e.x = nx
@@ -314,7 +373,7 @@ function enemy.draw(player)
         
         -- Additive Glow (Scales with size and color)
         love.graphics.setBlendMode("add")
-        local glowSize = e.size * 1.5
+        local glowSize = (e.size or 20) * 1.5
         for i = 10, 1, -1 do
             local r, a = glowSize * (i / 10), (1 - (i / 10)) * 0.25
             love.graphics.setColor(e.color[1], e.color[2], e.color[3], a)
@@ -382,7 +441,7 @@ function enemy.draw(player)
     end
 
     -- Global Debug Drawing (e.g., Slots)
-    if enemy.config.showSlots and player then
+    if enemy.showSlots and player then
         for _, mod in pairs(enemy.typeModules) do
             if mod.globalDraw then
                 mod.globalDraw(player, enemy)

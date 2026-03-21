@@ -264,6 +264,12 @@ function map.generate(seed)
     end
 end
 
+function map.update(dt, player, enemyModule, soulModule, projectileModule)
+    enemyModule.update(dt, player, map)
+    soulModule.update(dt, player, map)
+    projectileModule.update(dt, player, map)
+end
+
 function map.draw()
     -- Draw walls and floors
     for y = 1, map.height do
@@ -319,6 +325,21 @@ end
 
 function map.getPortalWorldPos()
     return (map.portalX - 0.5) * map.gridSize, (map.portalY - 0.5) * map.gridSize
+end
+
+function map.drawWorld(hubModule, objectCanvas, screenCanvas)
+    map.draw()
+    -- Draw portal to objectCanvas for highlight
+    love.graphics.setCanvas(objectCanvas)
+    love.graphics.clear(0,0,0,0)
+    love.graphics.push()
+    love.graphics.origin()
+    hubModule.drawPortal(100, 100, 60)
+    love.graphics.pop()
+    love.graphics.setCanvas(screenCanvas)
+    
+    local px, py = map.getPortalWorldPos()
+    hubModule.drawPortal(px, py, 60)
 end
 
 function map.isOnPortal(px, py)

@@ -22,6 +22,11 @@ hud.lastSouls = 0
 hud.soulPulseTimer = 0
 hud.animTimer = 0
 
+-- Save Notification (Moved from game.lua)
+hud.saveNotificationTimer = 0
+hud.saveNotificationAlpha = 0
+hud.saveNotificationRect = nil
+
 function hud.load()
     gothicTitleFont  = love.graphics.newFont("assets/fonts/Metamorphous-Regular.ttf", 64)
     gothicButtonFont = love.graphics.newFont("assets/fonts/Metamorphous-Regular.ttf", 20)
@@ -48,11 +53,31 @@ function hud.update(dt, isPaused)
     -- Always tick the animation timer so UI elements (like hover glows) keep breathing
     hud.animTimer = hud.animTimer + dt
 
+    -- Save Notification Fade
+    if hud.saveNotificationTimer > 0 then
+        hud.saveNotificationAlpha = math.min(1, hud.saveNotificationAlpha + dt * 4)
+        hud.saveNotificationTimer = hud.saveNotificationTimer - dt
+    else
+        hud.saveNotificationAlpha = math.max(0, hud.saveNotificationAlpha - dt * 2)
+    end
+
     if isPaused then return end
     
     if hud.soulPulseTimer > 0 then
         hud.soulPulseTimer = math.max(0, hud.soulPulseTimer - dt)
     end
+end
+
+function hud.triggerSaveNotification()
+    hud.saveNotificationTimer = 4.0
+end
+
+function hud.isNotificationActive()
+    return hud.saveNotificationAlpha > 0.05
+end
+
+function hud.closeNotification()
+    hud.saveNotificationTimer = 0
 end
 
 -- ── Debug Panel ──────────────────────────────────────────────────────────────
@@ -441,10 +466,11 @@ end
 
 -- ── Save Notification Popup ─────────────────────────────────────────────────
 
-function hud.drawSaveNotification(alpha, mx, my, timerRatio)
-    if alpha <= 0 then return nil end
+function hud.drawSaveNotificationPopup(mx, my)
+    local alpha = hud.saveNotificationAlpha
+    if alpha <= 0 then return end
     
-    local tr = timerRatio or 0
+    local tr = hud.saveNotificationTimer / 4.0
     local w, h = 1280, 720
     local pw, ph = 500, 240
     local px, py = w/2 - pw/2, h/2 - ph/2
@@ -511,7 +537,7 @@ function hud.drawSaveNotification(alpha, mx, my, timerRatio)
     hud.drawStoneTablet(bx, by, bw, bh, "Ok", isHover, false, alpha)
     
     -- Return button rect for hit testing in game.lua
-    return {x = bx, y = by, w = bw, h = bh}
+    hud.saveNotificationRect = {x = bx, y = by, w = bw, h = bh}
 end
 
 -- ── Reset to default font ───────────────────────────────────────────────────

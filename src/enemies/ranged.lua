@@ -51,7 +51,28 @@ ranged.config = {
     soulDropRate = 0.65,        -- Probability to drop souls
     soulMinDrop = 3,            -- Minimum number of souls to drop
     soulMaxDrop = 5,            -- Maximum number of souls to drop
+
+    -- Spawning & CR
+    challengeRating = 2,        -- CR cost
+    spawnWeight = 4,            -- Relative spawn frequency
+
+    -- Roaming
+    roamSpeed = 60,             -- Speed when roaming
+    roamWaitMin = 3,            -- Min wait time at a spot
+    roamWaitMax = 7,            -- Max wait time at a spot
+    roamRadius = 200,           -- How far it can roam from spawn/current spot
+
+    -- Visuals (Decentralized from enemy.lua)
+    hitFlashDuration = 0.15,
+    deathParticleCount = 10,
+    deathParticleSpeed = 120,
+    deathParticleLife = 0.4,
 }
+
+function ranged.init()
+    ranged.hitSound = love.audio.newSource("assets/audio/enemy_hit.wav", "static")
+    ranged.deathSound = love.audio.newSource("assets/audio/enemy_death.wav", "static")
+end
 
 function ranged.create(e)
     local cfg = ranged.config

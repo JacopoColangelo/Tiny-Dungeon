@@ -49,12 +49,31 @@ melee.config = {
     soulDropRate = 0.6,         -- Probability to drop souls
     soulMinDrop = 2,            -- Minimum number of souls to drop
     soulMaxDrop = 4,            -- Maximum number of souls to drop
+
+    -- Spawning & CR
+    challengeRating = 1,        -- CR cost
+    spawnWeight = 10,           -- Relative spawn frequency
+
+    -- Roaming
+    roamSpeed = 40,             -- Speed when roaming
+    roamWaitMin = 2,            -- Min wait time at a spot
+    roamWaitMax = 5,            -- Max wait time at a spot
+    roamRadius = 150,           -- How far it can roam from spawn/current spot
+
+    -- Visuals (Decentralized from enemy.lua)
+    hitFlashDuration = 0.15,
+    deathParticleCount = 15,
+    deathParticleSpeed = 150,
+    deathParticleLife = 0.5,
 }
 
 -- Private state for slot management (owned by the melee module)
 local slots = {}
 
 function melee.init()
+    melee.hitSound = love.audio.newSource("assets/audio/enemy_hit.wav", "static")
+    melee.deathSound = love.audio.newSource("assets/audio/enemy_death.wav", "static")
+    
     for i = 1, melee.config.numSlots do
         slots[i] = { x = 0, y = 0, baseX = 0, baseY = 0, occupied = false, valid = false }
     end

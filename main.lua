@@ -18,7 +18,9 @@ local VIRTUAL_H = 720
 -- ── State ────────────────────────────────────────────────────────────────────
 
 -- Rendering references (assigned in refreshCanvas or passed in draw)
-local screenCanvas
+local screenCanvas--TODO: Move hub related code to hub.lua
+--TODO: Move map related code to map.lua
+--TODO: Move anything that isn't game loop related to its own file
 local crtShader
 
 -- Scale/Offset for drawing virtual canvas to screen

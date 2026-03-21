@@ -15,6 +15,11 @@ local skilltree = require("src.skilltree")
 local projectile= require("src.projectile")
 local game = {}
 
+-- Difficulty/Spawning Config
+game.config = {
+    mapCR = 4,              -- Challenge Rating for the dungeon
+}
+
 -- Rendering references (assigned in refreshCanvas or passed in draw)
 local screenCanvas
 local ambient
@@ -30,11 +35,6 @@ local clickEffect = { x = 0, y = 0, timer = 0, lifetime = 0.3, active = false }
 local baseAmbientVolume = 0.5
 local worldReady = false
 
-local portalPromptAlpha = 0
-local shrinePromptAlpha = 0
-local saveNotificationTimer = 0
-local saveNotificationAlpha = 0
-local saveNotificationRect = nil
 local muffleFilter = {type = "lowpass", volume = 1.0, highgain = 0.05}
 local muffleFactor = 0 -- 0: clean, 1: fully muffled
 local isMuffled = false
@@ -90,12 +90,10 @@ function game.loadHub()
     player.targetY = sy
     player.shadowPolygon = nil
     
-    portalPromptAlpha = 0
-    
     camera.snapTo(player)
     enemy.init()
     soul.init()
-    hub.portalParticles = {}
+    hub.generate() 
 end
 
 local function loadDungeon()
@@ -104,7 +102,18 @@ local function loadDungeon()
     
     levelType = "dungeon"
     gameState = "play"
+    
+    -- Center player in the new dungeon
+    player.x = map.width * map.gridSize / 2
+    player.y = map.height * map.gridSize / 2
+    player.targetX = player.x + player.size/2
+    player.targetY = player.y + player.size/2
     player.hp = player.maxHp
+
+    -- Spawn Enemies
+    local mapCR = game.config and game.config.mapCR or 1.5
+    enemy.spawnAll(map, player, mapCR)
+    camera.snapTo(player)
     
     if gameOverSound then gameOverSound:stop() end
     if ambient and ambientMuffled then
@@ -125,24 +134,12 @@ local function loadDungeon()
     
     portalPromptAlpha = 0
     
-    camera.snapTo(player)
-
     -- Spawn enemies
     enemy.init()
     soul.init()
     projectile.init()
-    local px = player.x + player.size/2
-    local py = player.y + player.size/2
-    for i = 1, 3 do
-        local r = love.math.random()
-        local eType = "melee"
-        if r > 0.8 then
-            eType = "elite_ranged"
-        elseif r > 0.4 then
-            eType = "ranged"
-        end
-        enemy.spawn(map, px, py, eType)
-    end
+    
+    enemy.spawnAll(map, player, game.config.mapCR)
 end
 
 function game.load()
@@ -171,19 +168,11 @@ function game.load()
 end
 
 function game.spawnEnemyProjectile(x, y, dx, dy, params)
-    local p = params or {}
-    projectile.spawn(x, y, dx, dy, {
-        speed = p.speed or 200,
-        homing = p.homing or 0,
-        size = p.size or 8,
-        damage = p.damage or 0.5,
-        color = p.color or {0.6, 0.2, 1.0},
-        life = p.life or 3.0
-    })
+    projectile.spawn(x, y, dx, dy, params)
 end
 
 function game.isNotificationActive()
-    return saveNotificationAlpha > 0.05
+    return hud.isNotificationActive()
 end
 
 function game.isInventoryOpen()
@@ -207,16 +196,8 @@ function game.mousemoved(vx, vy)
 end
 
 function game.update(dt, vx, vy, logicPaused, audioMuffled)
-    -- Save Notification Fade
-    if saveNotificationTimer > 0 then
-        saveNotificationAlpha = math.min(1, saveNotificationAlpha + dt * 4)
-        saveNotificationTimer = saveNotificationTimer - dt
-    else
-        saveNotificationAlpha = math.max(0, saveNotificationAlpha - dt * 2)
-    end
-
     -- If save notification is highly visible, effectively pause the game
-    local notificationPause = saveNotificationAlpha > 0.5
+    local notificationPause = hud.isNotificationActive()
 
     -- Handle Audio Muffling with smooth cross-fade
     local targetMuffle = (audioMuffled or notificationPause or gameState == "gameover") and 1 or 0
@@ -251,8 +232,8 @@ function game.update(dt, vx, vy, logicPaused, audioMuffled)
         end
     end
 
-    if saveNotificationAlpha > 0.5 and saveNotificationRect then
-        local r = saveNotificationRect
+    if notificationPause and hud.saveNotificationRect then
+        local r = hud.saveNotificationRect
         if vx >= r.x and vx <= r.x + r.w and vy >= r.y and vy <= r.y + r.h then
             currentHoveredId = "save_notification_close"
         end
@@ -282,14 +263,15 @@ function game.update(dt, vx, vy, logicPaused, audioMuffled)
     end
 
     if worldReady then
-        -- HUD gets updated regardless of inventory/skill tree pause so animTimer keeps ticking
-        hud.update(dt, logicPaused or notificationPause or inventoryPause or skilltreePause)
+        -- Update HUD with logical pause state
+        hud.update(dt, logicPaused or inventoryPause or skilltreePause)
     end
 
+    -- Save Notification and other hard pauses return early here
     if logicPaused or notificationPause or inventoryPause or skilltreePause then return end
     
     if worldReady then
-        hub.updateTimer(dt)
+        hub.update(dt, player, levelType, currentMap())
 
         if gameState == "gameover" then 
             if gameOverSound and gameOverSound:isPlaying() then
@@ -315,18 +297,10 @@ function game.update(dt, vx, vy, logicPaused, audioMuffled)
         player.update(dt, currentMap())
         
         if levelType == "dungeon" then
-            enemy.update(dt, player, map)
-            soul.update(dt, player, map)
-            projectile.update(dt, player, map)
-            hub.updatePortal(dt, map)
-        else
-            hub.updatePortal(dt, hub)
-            hub.updateGrass(dt, player)
-            hub.updateRain(dt, camera.x, camera.y)
-            hub.updateClouds(dt, player)
+            map.update(dt, player, enemy, soul, projectile)
         end
 
-        -- Click Animation
+        -- Click Animation (Keep for loop)
         if clickEffect.active then
             clickEffect.timer = clickEffect.timer - dt
             if clickEffect.timer <= 0 then clickEffect.active = false end
@@ -346,23 +320,6 @@ function game.update(dt, vx, vy, logicPaused, audioMuffled)
             portalShadowPolygon = shadows.cast(pWX, pWY, 700)
         else
             portalShadowPolygon = nil
-        end
-
-        -- Portal check
-        if currentMap().isOnPortal(player.x, player.y) then
-            portalPromptAlpha = math.min(1, portalPromptAlpha + dt * 4)
-        else
-            portalPromptAlpha = math.max(0, portalPromptAlpha - dt * 4)
-        end
-
-        if levelType == "hub" then
-            if hub.isOnSaveShrine(px, py) then
-                shrinePromptAlpha = math.min(1, shrinePromptAlpha + dt * 4)
-            else
-                shrinePromptAlpha = math.max(0, shrinePromptAlpha - dt * 4)
-            end
-        else
-            shrinePromptAlpha = 0
         end
 
         -- Death check (dungeon only)
@@ -438,8 +395,8 @@ function game.keypressed(key)
             if key == "space" then loadDungeon() end -- regenerate dungeon
         end
         if key == "v" then 
-            enemy.config.showSlots = not enemy.config.showSlots 
-            print("Debug Slots: " .. tostring(enemy.config.showSlots))
+            enemy.showSlots = not enemy.showSlots 
+            print("Debug Slots: " .. tostring(enemy.showSlots))
         end
         if key == "k" and levelType == "dungeon" then
             local dmg = 0.5 + love.math.random() * 0.75
@@ -471,6 +428,17 @@ function game.mousepressed(vx, vy, button, isPaused)
         return
     end
     
+    -- 1. Save Notification interaction (High priority intercept)
+    if hud.isNotificationActive() and hud.saveNotificationRect and button == 1 then
+        local r = hud.saveNotificationRect
+        if vx >= r.x and vx <= r.x + r.w and vy >= r.y and vy <= r.y + r.h then
+            hud.closeNotification()
+            ui_audio.playClick()
+            return
+        end
+        return -- Intercept all clicks while notification is active
+    end
+
     if gameState == "play" then
         if button == 1 then
             local sx, sy = camera.getShakeOffset()
@@ -495,15 +463,6 @@ function game.mousepressed(vx, vy, button, isPaused)
         end
     end
 
-    -- Save Notification interaction
-    if saveNotificationAlpha > 0 and saveNotificationRect and button == 1 then
-        local r = saveNotificationRect
-        if vx >= r.x and vx <= r.x + r.w and vy >= r.y and vy <= r.y + r.h then
-            saveNotificationTimer = 0
-            ui_audio.playClick()
-        end
-    end
-
     return nil
 end
 
@@ -522,50 +481,9 @@ function game.draw(canvas, isPaused, vx, vy)
         love.graphics.translate(-math.floor(camera.x) + sx, -math.floor(camera.y) + sy)
         
         if levelType == "hub" then
-            hub.draw(camera)
-            hub.drawRain(camera, false)   -- base rain pass (before lighting)
-            -- Draw portal to objectCanvas for highlight
-            love.graphics.setCanvas(objectCanvas)
-            love.graphics.clear(0,0,0,0)
-            love.graphics.push()
-            love.graphics.origin()
-            hub.drawPortal(100, 100, 60) -- Scaled for 720p bigger portal
-            love.graphics.pop()
-            love.graphics.setCanvas(screenCanvas)
-            
-            local px, py = hub.getPortalWorldPos()
-            if portalPromptAlpha > 0.01 then
-                highlightShader:send("highlightColor", {0.8, 0.6, 1.0})
-                highlightShader:send("stepSize", {1/200, 1/200})
-                love.graphics.setShader(highlightShader)
-                love.graphics.setColor(1, 1, 1, portalPromptAlpha * 0.6)
-                love.graphics.draw(objectCanvas, px - 100, py - 100)
-                love.graphics.setShader()
-            end
-            
-            hub.drawPortal(px, py, 60)
+            hub.drawWorld(camera, player, highlightShader, objectCanvas, screenCanvas)
         else
-            map.draw()
-            -- Draw portal to objectCanvas for highlight
-            love.graphics.setCanvas(objectCanvas)
-            love.graphics.clear(0,0,0,0)
-            love.graphics.push()
-            love.graphics.origin()
-            hub.drawPortal(100, 100, 60)
-            love.graphics.pop()
-            love.graphics.setCanvas(screenCanvas)
-            
-            local px, py = map.getPortalWorldPos()
-            if portalPromptAlpha > 0.01 then
-                highlightShader:send("highlightColor", {0.8, 0.6, 1.0})
-                highlightShader:send("stepSize", {1/200, 1/200})
-                love.graphics.setShader(highlightShader)
-                love.graphics.setColor(1, 1, 1, portalPromptAlpha * 0.6)
-                love.graphics.draw(objectCanvas, px - 100, py - 100)
-                love.graphics.setShader()
-            end
-            
-            hub.drawPortal(px, py, 60)
+            map.drawWorld(hub, objectCanvas, screenCanvas)
         end
         
         enemy.draw(player)
@@ -600,29 +518,9 @@ function game.draw(canvas, isPaused, vx, vy)
     local pWX, pWY = currentMap().getPortalWorldPos()
     lighting.drawPortalBloom(pWX, pWY, camera)
     lighting.drawBloom(player, camera) -- Player torch bloom
-    if levelType == "hub" then
-        hub.drawRain(camera, true)  -- additive glint pass (after lighting)
-    end
     
     -- 6. UI Pass
-    if portalPromptAlpha > 0 then
-        local tx_world, ty_world = currentMap().getPortalWorldPos()
-        local tx = tx_world - math.floor(camera.x) + sx
-        local ty = ty_world - math.floor(camera.y) + sy
-        
-        local label = (levelType == "hub") and "Sanctuary Portal" or "Hub Portal"
-        local smallFont = hud.getFont("small")
-        love.graphics.setFont(smallFont)
-        local ltw = smallFont:getWidth(label)
-        
-        local bob = math.sin(hub.animTimer * 1.5) * 5
-        local ly = ty - 80 + bob
-        
-        love.graphics.setColor(0, 0, 0, 0.8 * portalPromptAlpha)
-        love.graphics.print(label, tx - ltw/2 + 2, ly + 2)
-        love.graphics.setColor(1, 1, 1, 1.0 * portalPromptAlpha)
-        love.graphics.print(label, tx - ltw/2, ly)
-    end
+    hub.drawPrompts(camera, hud, levelType, currentMap())
 
     hud.drawDebugPanel()
     hud.drawHUD(player, levelType == "dungeon")
@@ -631,50 +529,8 @@ function game.draw(canvas, isPaused, vx, vy)
     end
     hud.drawInventoryHint(levelType == "hub")
 
-    if portalPromptAlpha > 0 then
-        local smallFont = hud.getFont("small")
-        love.graphics.setFont(smallFont)
-        local text = "[E] to Interact"
-        local tw = smallFont:getWidth(text)
-        
-        local py = 600
-        love.graphics.setColor(0, 0, 0, 0.5 * portalPromptAlpha)
-        love.graphics.rectangle("fill", w/2 - tw/2 - 10, py - 5, tw + 20, 26, 4)
-        love.graphics.setColor(0.7, 0.9, 1.0, 0.9 * portalPromptAlpha)
-        love.graphics.print(text, w/2 - tw/2, py)
-    end
-
     if gameState == "gameover" then
         hud.drawGameOver(vx, vy)
-    end
-
-    -- Draw Shrine Prompt
-    if shrinePromptAlpha > 0 then
-        local tx_world, ty_world = hub.getSaveShrineWorldPos()
-        local tx = tx_world - math.floor(camera.x) + sx
-        local ty = ty_world - math.floor(camera.y) + sy
-        
-        local label = "Save Shrine"
-        local smallFont = hud.getFont("small")
-        love.graphics.setFont(smallFont)
-        local ltw = smallFont:getWidth(label)
-        
-        local bob = math.sin(hub.animTimer * 1.5) * 5
-        local ly = ty - 60 + bob
-        
-        love.graphics.setColor(0, 0, 0, 0.8 * shrinePromptAlpha)
-        love.graphics.print(label, tx - ltw/2 + 2, ly + 2)
-        love.graphics.setColor(0.4, 0.8, 1.0, 1.0 * shrinePromptAlpha)
-        love.graphics.print(label, tx - ltw/2, ly)
-
-        -- Universal interaction hint
-        local text = "[E] to Save"
-        local tw = smallFont:getWidth(text)
-        local py_hint = 600
-        love.graphics.setColor(0, 0, 0, 0.5 * shrinePromptAlpha)
-        love.graphics.rectangle("fill", w/2 - tw/2 - 10, py_hint - 5, tw + 20, 26, 4)
-        love.graphics.setColor(0.7, 0.9, 1.0, 0.9 * shrinePromptAlpha)
-        love.graphics.print(text, w/2 - tw/2, py_hint)
     end
 
     -- ── NEW: Pause Overlay pass
@@ -691,9 +547,7 @@ function game.draw(canvas, isPaused, vx, vy)
     end
 
     -- ── Save Notification pass
-    if saveNotificationAlpha > 0 then
-        saveNotificationRect = hud.drawSaveNotification(saveNotificationAlpha, vx, vy, saveNotificationTimer / 4.0)
-    end
+    hud.drawSaveNotificationPopup(vx, vy)
 
     love.graphics.setCanvas()
 end
@@ -701,84 +555,21 @@ end
 
 
 function game.saveGame()
-    local saveData = {
-        soulsTotal = player.soulsTotal,
-        playerX = player.x,
-        playerY = player.y,
-        level = levelType,
-        inventory = inventory.getSlots(),
-        skilltree = skilltree.getUnlocked(),
-    }
-    local success, msg = storage.save(saveData)
-    if success then
-        print("Game Saved!")
-        saveNotificationTimer = 4.0
-    else
-        print("Save failed: " .. tostring(msg))
+    if storage.saveGame(player, inventory, skilltree, levelType) then
+        hud.triggerSaveNotification()
     end
 end
 
 function game.loadGame()
-    local data = storage.load()
-    if data then
-        player.soulsTotal = data.soulsTotal or 0
-        player.soulsRun = 0
-        player.x = data.playerX or player.x
-        player.y = data.playerY or player.y
-        levelType = data.level or "hub"
-
-        -- Inventory: restore saved slots (or fall back to starter set)
-        inventory.init()
-        if data.inventory then
-            inventory.setSlots(data.inventory)
-        else
-            inventory.addItem("health_potion", 3)
-        end
-
-        -- Skill tree: restore unlocked skills
-        if data.skilltree then
-            skilltree.setUnlocked(data.skilltree, player)
-        else
-            skilltree.init()
-        end
-        
-        if levelType == "hub" then
-            game.loadHub()
-            -- Override position after loadHub defaults it
-            player.x = data.playerX
-            player.y = data.playerY
-        else
-            -- We don't support saving inside dungeons yet in this implementation
-            -- but if we did, we'd handle it here.
-            game.loadHub() 
-        end
-        print("Game Loaded!")
-    end
+    storage.loadGame(game, player, inventory, skilltree, camera)
 end
 
 function game.newGame()
-    -- Reset Player stats
-    player.maxHp = 4
-    player.soulsTotal = 0
-    player.soulsRun = 0
-    player.hp = player.maxHp
-    
     -- Reset Session/UI state
     hitStopTimer = 0
     clickEffect.active = false
-    portalPromptAlpha = 0
-    shrinePromptAlpha = 0
-
-    -- Inventory: fresh start with 3 health potions
-    inventory.init()
-    inventory.addItem("health_potion", 3)
-
-    -- Skill tree: fresh start
-    skilltree.init()
     
-    -- Switch to Hub
-    game.loadHub()
-    print("New Game Started!")
+    storage.newGame(game, player, inventory, skilltree)
 end
 
 function game.stop()
@@ -798,8 +589,3 @@ function game.stop()
 end
 
 return game
-
-
---TODO: Move hub related code to hub.lua
---TODO: Move map related code to map.lua
---TODO: Move anything that isn't game loop related to its own file

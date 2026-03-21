@@ -10,11 +10,26 @@ function camera.addShake(intensity, duration)
     camera.shakeTimer = math.max(camera.shakeTimer, duration)
 end
 
+camera.forceSnap = false
+
 function camera.follow(player, dt)
     local targetX = player.x + player.size/2 - 1280/2
     local targetY = player.y + player.size/2 - 720/2
-    camera.x = camera.x + (targetX - camera.x) * camera.lerpSpeed * dt
-    camera.y = camera.y + (targetY - camera.y) * camera.lerpSpeed * dt
+    
+    if camera.forceSnap then
+        camera.x = targetX
+        camera.y = targetY
+        camera.forceSnap = false
+        return
+    end
+
+    local dx = targetX - camera.x
+    local dy = targetY - camera.y
+    
+    -- Smooth lerp with dt clamping for stability
+    local lerpFactor = math.min(1.0, camera.lerpSpeed * dt)
+    camera.x = camera.x + dx * lerpFactor
+    camera.y = camera.y + dy * lerpFactor
 end
 
 function camera.updateShake(dt)
@@ -38,6 +53,7 @@ end
 function camera.snapTo(player)
     camera.x = player.x + player.size/2 - 1280/2
     camera.y = player.y + player.size/2 - 720/2
+    camera.forceSnap = true
 end
 
 -- Expose globally so player.lua can reference it for screen feedback

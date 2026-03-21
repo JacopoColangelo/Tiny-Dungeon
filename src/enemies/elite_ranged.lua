@@ -55,7 +55,28 @@ elite.config = {
     soulDropRate = 0.95,        -- Probability to drop souls
     soulMinDrop = 8,            -- Minimum number of souls to drop
     soulMaxDrop = 15,           -- Maximum number of souls to drop
+
+    -- Spawning & CR
+    challengeRating = 5,        -- CR cost
+    spawnWeight = 1,            -- Relative spawn frequency
+
+    -- Roaming
+    roamSpeed = 30,             -- Speed when roaming
+    roamWaitMin = 4,            -- Min wait time at a spot
+    roamWaitMax = 10,           -- Max wait time at a spot
+    roamRadius = 300,           -- How far it can roam from spawn/current spot
+
+    -- Visuals (Decentralized from enemy.lua)
+    hitFlashDuration = 0.2,
+    deathParticleCount = 20,
+    deathParticleSpeed = 180,
+    deathParticleLife = 0.6,
 }
+
+function elite.init()
+    elite.hitSound = love.audio.newSource("assets/audio/enemy_hit.wav", "static")
+    elite.deathSound = love.audio.newSource("assets/audio/enemy_death.wav", "static")
+end
 
 function elite.create(e)
     local cfg = elite.config
