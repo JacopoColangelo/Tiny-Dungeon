@@ -27,6 +27,16 @@ hud.saveNotificationTimer = 0
 hud.saveNotificationAlpha = 0
 hud.saveNotificationRect = nil
 
+-- Dungeon Unlocked Banner
+hud.unlockBannerTimer = 0
+hud.unlockBannerAlpha = 0
+
+-- Dungeon Name/Difficulty Label (shown after entering a dungeon)
+hud.dungeonLabelName = ""
+hud.dungeonLabelDifficulty = ""
+hud.dungeonLabelTimer = 0
+hud.dungeonLabelAlpha = 0
+
 function hud.load()
     gothicTitleFont  = love.graphics.newFont("assets/fonts/Metamorphous-Regular.ttf", 64)
     gothicButtonFont = love.graphics.newFont("assets/fonts/Metamorphous-Regular.ttf", 20)
@@ -61,6 +71,22 @@ function hud.update(dt, isPaused)
         hud.saveNotificationAlpha = math.max(0, hud.saveNotificationAlpha - dt * 2)
     end
 
+    -- Unlock Banner Fade
+    if hud.unlockBannerTimer > 0 then
+        hud.unlockBannerAlpha = math.min(1, hud.unlockBannerAlpha + dt * 3)
+        hud.unlockBannerTimer = hud.unlockBannerTimer - dt
+    else
+        hud.unlockBannerAlpha = math.max(0, hud.unlockBannerAlpha - dt * 2)
+    end
+
+    -- Dungeon Label Fade
+    if hud.dungeonLabelTimer > 0 then
+        hud.dungeonLabelAlpha = math.min(1, hud.dungeonLabelAlpha + dt * 2)
+        hud.dungeonLabelTimer = hud.dungeonLabelTimer - dt
+    else
+        hud.dungeonLabelAlpha = math.max(0, hud.dungeonLabelAlpha - dt * 1.5)
+    end
+
     if isPaused then return end
     
     if hud.soulPulseTimer > 0 then
@@ -70,6 +96,18 @@ end
 
 function hud.triggerSaveNotification()
     hud.saveNotificationTimer = 4.0
+end
+
+function hud.triggerUnlockBanner()
+    hud.unlockBannerTimer = 3.0
+    hud.unlockBannerAlpha = 0
+end
+
+function hud.triggerDungeonLabel(name, difficulty)
+    hud.dungeonLabelName = name or ""
+    hud.dungeonLabelDifficulty = difficulty or ""
+    hud.dungeonLabelTimer = 3.5
+    hud.dungeonLabelAlpha = 0
 end
 
 function hud.isNotificationActive()
@@ -538,6 +576,80 @@ function hud.drawSaveNotificationPopup(mx, my)
     
     -- Return button rect for hit testing in game.lua
     hud.saveNotificationRect = {x = bx, y = by, w = bw, h = bh}
+end
+
+-- ── Dungeon Unlocked Banner ─────────────────────────────────────────────────
+
+function hud.drawUnlockBanner()
+    if hud.unlockBannerAlpha <= 0 then return end
+    local w = 1280
+    local alpha = hud.unlockBannerAlpha
+
+    -- Title (same font as dungeon name label)
+    local titleFont = gothicTitleFont
+    love.graphics.setFont(titleFont)
+    local text = "Dungeon Unlocked"
+    local tw = titleFont:getWidth(text)
+    local th = titleFont:getHeight()
+    local tx = w/2 - tw/2
+    local ty = 50
+
+    -- Backdrop (matching dungeon label)
+    love.graphics.setColor(0, 0, 0, 0.5 * alpha)
+    love.graphics.rectangle("fill", tx - 30, ty - 10, tw + 60, th + 20, 6)
+
+    -- Text shadow
+    love.graphics.setColor(0, 0, 0, 0.8 * alpha)
+    love.graphics.print(text, tx + 3, ty + 3)
+    -- Text face (golden)
+    love.graphics.setColor(0.9, 0.8, 0.3, alpha)
+    love.graphics.print(text, tx, ty)
+end
+
+-- ── Dungeon Name / Difficulty Label ─────────────────────────────────────────
+
+function hud.drawDungeonLabel()
+    if hud.dungeonLabelAlpha <= 0 then return end
+    local w = 1280
+    local alpha = hud.dungeonLabelAlpha
+
+    -- Name
+    local titleFont = gothicTitleFont
+    love.graphics.setFont(titleFont)
+    local name = hud.dungeonLabelName
+    local nw = titleFont:getWidth(name)
+    local nh = titleFont:getHeight()
+    local nx = w/2 - nw/2
+    local ny = 50
+
+    -- Backdrop
+    love.graphics.setColor(0, 0, 0, 0.5 * alpha)
+    love.graphics.rectangle("fill", nx - 30, ny - 10, nw + 60, nh + 40, 6)
+
+    -- Name shadow
+    love.graphics.setColor(0, 0, 0, 0.8 * alpha)
+    love.graphics.print(name, nx + 3, ny + 3)
+    -- Name face
+    love.graphics.setColor(0.85, 0.85, 0.8, alpha)
+    love.graphics.print(name, nx, ny)
+
+    -- Difficulty (below name)
+    local smallFont = gothicButtonFont
+    love.graphics.setFont(smallFont)
+    local diff = hud.dungeonLabelDifficulty
+    local dw = smallFont:getWidth(diff)
+    local dy = ny + nh + 2
+
+    -- Difficulty color
+    local diffColors = {
+        Normal    = {0.5, 0.8, 0.5},
+        Hard      = {0.9, 0.6, 0.2},
+        Nightmare = {0.9, 0.2, 0.2},
+    }
+    local dc = diffColors[diff] or {0.7, 0.7, 0.7}
+
+    love.graphics.setColor(dc[1], dc[2], dc[3], alpha * 0.8)
+    love.graphics.print(diff, w/2 - dw/2, dy)
 end
 
 -- ── Reset to default font ───────────────────────────────────────────────────

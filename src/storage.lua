@@ -120,6 +120,7 @@ function storage.saveGame(player, inventory, skilltree, levelType, gameModule)
         playerY = player.y,
         level = levelType,
         currentLevelIndex = gameModule.getCurrentLevel(),
+        unlockedDungeons = gameModule.getUnlockedDungeons(),
         stats = {
             maxHp = player.maxHp,
             speed = player.speed,
@@ -150,6 +151,7 @@ function storage.loadGame(gameModule, player, inventory, skilltree, cameraModule
         local levelType = data.level or "hub"
         local levelIndex = data.currentLevelIndex or 1
         gameModule.setCurrentLevel(levelIndex)
+        gameModule.setUnlockedDungeons(data.unlockedDungeons or {1})
 
         -- Restore stats if they exist (prevents skill accumulation bug)
         if data.stats then

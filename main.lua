@@ -130,7 +130,7 @@ function love.keypressed(key)
         options.keypressed(key)
     elseif appState == "playing" then
         if key == "escape" then
-            if game.isInventoryOpen() or game.isSkillTreeOpen() then
+            if game.isInventoryOpen() or game.isSkillTreeOpen() or game.isDungeonSelectOpen() then
                 -- Let the active module close itself
                 local result = game.keypressed(key)
             elseif not game.isNotificationActive() and not game.isGameOver() then
@@ -201,6 +201,12 @@ function love.draw()
     love.graphics.draw(screenCanvas, offsetX, offsetY, 0, scale, scale)
     
     love.graphics.setShader()
+end
+
+function love.wheelmoved(x, y)
+    if appState == "playing" then
+        game.wheelmoved(x, y)
+    end
 end
 
 function love.mousemoved(mx, my)

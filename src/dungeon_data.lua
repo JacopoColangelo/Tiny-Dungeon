@@ -3,6 +3,7 @@ local dungeon_data = {}
 dungeon_data.levels = {
     {
         name = "The Forsaken Halls",
+        difficulty = "Normal",
         cr = 4.0,           -- Challenge Rating (Difficulty)
         width = 40,         -- Tiles wide
         height = 40,        -- Tiles high
@@ -11,6 +12,7 @@ dungeon_data.levels = {
     },
     {
         name = "The Crimson Depths",
+        difficulty = "Hard",
         cr = 6.5,
         width = 50,
         height = 50,
@@ -19,6 +21,7 @@ dungeon_data.levels = {
     },
     {
         name = "The Void Cathedral",
+        difficulty = "Nightmare",
         cr = 10.0,
         width = 60,
         height = 60,

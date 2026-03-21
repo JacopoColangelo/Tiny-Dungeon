@@ -13,6 +13,9 @@ local ui_audio  = require("src.ui_audio")
 local inventory = require("src.inventory")
 local skilltree = require("src.skilltree")
 local projectile= require("src.projectile")
+local dungeon_select = require("src.dungeon_select")
+local portal_choice  = require("src.portal_choice")
+local dungeon_data = require("src.dungeon_data")
 local game = {}
 
 -- Rendering references (assigned in refreshCanvas or passed in draw)
@@ -35,6 +38,17 @@ local muffleFactor = 0 -- 0: clean, 1: fully muffled
 local isMuffled = false
 local portalShadowPolygon = nil
 local lastHoveredId = nil
+
+-- Dungeon Progression
+local unlockedDungeons = {1} -- indices of unlocked dungeons
+local dungeonUnlockTriggered = false -- prevent duplicate triggers per dungeon
+
+-- Screen Fade System
+local fadeAlpha = 0
+local fadeState = "none" -- "none" | "fade_out" | "loading" | "fade_in"
+local fadeCallback = nil
+local fadeDungeonIndex = nil
+local FADE_SPEED = 2.5
 
 function _G.hitStop(duration)
     hitStopTimer = math.max(hitStopTimer, duration)
@@ -99,6 +113,7 @@ local function loadDungeon(levelIndex)
     
     levelType = "dungeon"
     gameState = "play"
+    dungeonUnlockTriggered = false
     
     -- Reset level state
     enemy.init()
@@ -127,6 +142,13 @@ local function loadDungeon(levelIndex)
         ambient:play()
         ambientMuffled:play()
     end
+end
+
+-- Start a fade-out → load dungeon → fade-in sequence
+local function startDungeonTransition(levelIndex)
+    fadeDungeonIndex = levelIndex
+    fadeState = "fade_out"
+    fadeAlpha = 0
 end
 
 function game.load()
@@ -176,6 +198,10 @@ function game.getLevelType() return levelType end
 function game.isGameOver() return gameState == "gameover" end
 function game.getCurrentLevel() return map.getCurrentLevel() end
 function game.setCurrentLevel(index) map.setCurrentLevel(index) end
+function game.getUnlockedDungeons() return unlockedDungeons end
+function game.setUnlockedDungeons(t) unlockedDungeons = t or {1} end
+function game.isDungeonSelectOpen() return dungeon_select.isOpen() end
+function game.isPortalChoiceOpen() return portal_choice.isOpen() end
 
 -- ── Update ───────────────────────────────────────────────────────────────────
 
@@ -246,18 +272,83 @@ function game.update(dt, vx, vy, logicPaused, audioMuffled)
     -- Inventory and skill tree act as soft pauses for game logic
     local inventoryPause = inventory.isOpen()
     local skilltreePause = skilltree.isOpen()
+    local dungeonSelectPause = dungeon_select.isOpen()
+    local portalChoicePause = portal_choice.isOpen()
     inventory.update(dt, vx, vy)
     if levelType == "hub" then
         skilltree.update(dt, vx, vy)
     end
+    dungeon_select.update(dt, vx, vy, unlockedDungeons)
+    portal_choice.update(dt, vx, vy)
+
+    -- Handle dungeon selection result
+    if dungeon_select.isOpen() then
+        local selection = dungeon_select.getSelection()
+        if selection then
+            dungeon_select.close()
+            if selection ~= "back" then
+                startDungeonTransition(selection)
+            end
+        end
+    end
+
+    -- Handle portal choice result
+    if portal_choice.isOpen() then
+        local selection = portal_choice.getSelection()
+        if selection then
+            portal_choice.close()
+            if selection == "hub" then
+                player.soulsTotal = (player.soulsTotal or 0) + (player.soulsRun or 0)
+                player.soulsRun = 0
+                game.loadHub()
+            elseif selection == "next" then
+                local nextIdx = map.getCurrentLevel() + 1
+                
+                -- Check if not already unlocked
+                if nextIdx <= #dungeon_data.levels then
+                    local alreadyUnlocked = false
+                    for _, idx in ipairs(unlockedDungeons) do
+                        if idx == nextIdx then alreadyUnlocked = true break end
+                    end
+                    if not alreadyUnlocked then
+                        table.insert(unlockedDungeons, nextIdx)
+                    end
+                end
+
+                startDungeonTransition(nextIdx)
+            end
+        end
+    end
+
+    -- Screen Fade System
+    if fadeState == "fade_out" then
+        fadeAlpha = math.min(1, fadeAlpha + FADE_SPEED * dt)
+        if fadeAlpha >= 1 then
+            fadeState = "loading"
+            -- Actually load the dungeon while screen is black
+            loadDungeon(fadeDungeonIndex)
+            fadeState = "fade_in"
+        end
+    elseif fadeState == "fade_in" then
+        fadeAlpha = math.max(0, fadeAlpha - FADE_SPEED * dt)
+        if fadeAlpha <= 0 then
+            fadeState = "none"
+            -- Trigger dungeon name label after fade completes
+            local config = map.getConfig()
+            if config then
+                hud.triggerDungeonLabel(config.name, config.difficulty)
+            end
+        end
+    end
 
     if worldReady then
         -- Update HUD with logical pause state
-        hud.update(dt, logicPaused or inventoryPause or skilltreePause)
+        hud.update(dt, logicPaused or inventoryPause or skilltreePause or dungeonSelectPause or portalChoicePause)
     end
 
     -- Save Notification and other hard pauses return early here
-    if logicPaused or notificationPause or inventoryPause or skilltreePause then return end
+    if logicPaused or notificationPause or inventoryPause or skilltreePause or dungeonSelectPause or portalChoicePause then return end
+    if fadeState ~= "none" then return end
     
     if worldReady then
         hub.update(dt, player, levelType, currentMap())
@@ -322,6 +413,13 @@ function game.update(dt, vx, vy, logicPaused, audioMuffled)
                     gameOverSound:play() 
                 end
             end
+
+            -- Activate portal when all enemies are cleared (Unlock happens only on descending)
+            if not dungeonUnlockTriggered and gameState == "play" and #enemy.list == 0 then
+                map.portalActive = true
+                hud.triggerUnlockBanner()
+                dungeonUnlockTriggered = true
+            end
         else
             -- Safety: keep hp max in hub
             player.hp = player.maxHp
@@ -347,9 +445,15 @@ function game.keypressed(key)
             return nil
         end
 
-        -- Escape closes inventory or skill tree before pause
+        -- Escape closes inventory, skill tree, or dungeon select before pause
         if key == "escape" then
-            if inventory.isOpen() then
+            if dungeon_select.isOpen() then
+                dungeon_select.keypressed(key)
+                return nil
+            elseif portal_choice.isOpen() then
+                portal_choice.keypressed(key)
+                return nil
+            elseif inventory.isOpen() then
                 inventory.keypressed(key)
                 return nil
             elseif skilltree.isOpen() then
@@ -358,21 +462,20 @@ function game.keypressed(key)
             end
         end
 
-        -- While either overlay is open, swallow other keypresses
-        if inventory.isOpen() or skilltree.isOpen() then return nil end
+        -- While any overlay is open, swallow other keypresses
+        if inventory.isOpen() or skilltree.isOpen() or dungeon_select.isOpen() or portal_choice.isOpen() then return nil end
 
         -- Enter/Exit portal
         if key == "e" or key == "return" then
             local px = player.x + player.size/2
             local py = player.y + player.size/2
             if levelType == "hub" and hub.isOnPortal(px, py) then
-                loadDungeon()
+                -- Open dungeon selection overlay instead of loading directly
+                dungeon_select.open()
                 return
             elseif levelType == "dungeon" and map.isOnPortal(px, py) then
-                -- Extract souls
-                player.soulsTotal = (player.soulsTotal or 0) + (player.soulsRun or 0)
-                player.soulsRun = 0
-                game.loadHub()
+                -- Open portal choice overlay
+                portal_choice.open(map.getCurrentLevel())
                 return
             elseif levelType == "hub" and hub.isOnSaveShrine(px, py) then
                 game.saveGame()
@@ -402,6 +505,18 @@ end
 function game.mousepressed(vx, vy, button, isPaused)
     if isPaused then
         pause.mousepressed(vx, vy, button)
+        return
+    end
+
+    -- Portal choice intercepts when open
+    if portal_choice.isOpen() then
+        portal_choice.mousepressed(vx, vy, button)
+        return
+    end
+
+    -- Dungeon select intercepts when open
+    if dungeon_select.isOpen() then
+        dungeon_select.mousepressed(vx, vy, button, unlockedDungeons)
         return
     end
 
@@ -453,6 +568,13 @@ function game.mousepressed(vx, vy, button, isPaused)
     end
 
     return nil
+end
+
+function game.wheelmoved(x, y)
+    if dungeon_select.isOpen() then
+        -- Pass maxScroll dynamically based on UI list size
+        dungeon_select.wheelmoved(x, y, dungeon_select.maxScroll or 0)
+    end
 end
 
 -- ── Draw ─────────────────────────────────────────────────────────────────────
@@ -518,6 +640,12 @@ function game.draw(canvas, isPaused, vx, vy)
     end
     hud.drawInventoryHint(levelType == "hub")
 
+    -- Dungeon Unlocked Banner
+    hud.drawUnlockBanner()
+
+    -- Dungeon Name/Difficulty Label
+    hud.drawDungeonLabel()
+
     if gameState == "gameover" then
         hud.drawGameOver(vx, vy)
     end
@@ -535,8 +663,20 @@ function game.draw(canvas, isPaused, vx, vy)
         skilltree.draw(vx, vy, player)
     end
 
+    -- ── Dungeon Selection Overlay pass
+    dungeon_select.draw(vx, vy, unlockedDungeons)
+
+    -- ── Portal Choice Overlay pass
+    portal_choice.draw(vx, vy)
+
     -- ── Save Notification pass
     hud.drawSaveNotificationPopup(vx, vy)
+
+    -- ── Screen Fade Overlay
+    if fadeAlpha > 0 then
+        love.graphics.setColor(0, 0, 0, fadeAlpha)
+        love.graphics.rectangle("fill", 0, 0, w, h)
+    end
 
     love.graphics.setCanvas()
 end
@@ -558,6 +698,9 @@ function game.newGame()
     hitStopTimer = 0
     clickEffect.active = false
     game.setCurrentLevel(1)
+    unlockedDungeons = {1}
+    fadeState = "none"
+    fadeAlpha = 0
     
     storage.newGame(game, player, inventory, skilltree)
 end

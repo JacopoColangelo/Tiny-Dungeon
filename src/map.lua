@@ -10,6 +10,7 @@ map.data = {}
 map.spawnX = 0
 map.spawnY = 0
 map.portalCollisionRadius = 15
+map.portalActive = false
 
 function map.getCurrentLevel() return map.currentLevelIndex end
 function map.setCurrentLevel(index) map.currentLevelIndex = index end
@@ -93,6 +94,7 @@ function map.generate(config)
     -- 5. Find Exit Portal Location (Tile furthest from spawn)
     local maxDistSq = 0
     map.portalX, map.portalY = map.spawnX, map.spawnY
+    map.portalActive = false
     for y = 1, map.height do
         for x = 1, map.width do
             if map.data[y][x] == 0 then
@@ -341,20 +343,24 @@ end
 
 function map.drawWorld(hubModule, objectCanvas, screenCanvas)
     map.draw()
-    -- Draw portal to objectCanvas for highlight
-    love.graphics.setCanvas(objectCanvas)
-    love.graphics.clear(0,0,0,0)
-    love.graphics.push()
-    love.graphics.origin()
-    hubModule.drawPortal(100, 100, 60)
-    love.graphics.pop()
-    love.graphics.setCanvas(screenCanvas)
     
-    local px, py = map.getPortalWorldPos()
-    hubModule.drawPortal(px, py, 60)
+    if map.portalActive then
+        -- Draw portal to objectCanvas for highlight
+        love.graphics.setCanvas(objectCanvas)
+        love.graphics.clear(0,0,0,0)
+        love.graphics.push()
+        love.graphics.origin()
+        hubModule.drawPortal(100, 100, 60)
+        love.graphics.pop()
+        love.graphics.setCanvas(screenCanvas)
+        
+        local px, py = map.getPortalWorldPos()
+        hubModule.drawPortal(px, py, 60)
+    end
 end
 
 function map.isOnPortal(px, py)
+    if not map.portalActive and not map.isHub then return false end
     local tx, ty = map.getPortalWorldPos()
     local dx, dy = px - tx, py - ty
     return math.sqrt(dx*dx + dy*dy) < 85
