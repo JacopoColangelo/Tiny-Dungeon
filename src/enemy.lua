@@ -12,6 +12,10 @@ enemy.particles = {}
 enemy.typeModules = {}
 enemy.showSlots = false
 
+enemy.config = {
+    minSpawnDist = 400,     -- Minimum pixels away from player to spawn
+}
+
 -- ============================================================================
 -- HELPERS (Exposed to enemy types)
 -- ============================================================================
@@ -79,26 +83,26 @@ function enemy.init()
     end
 end
 
-function enemy.spawnAll(map, player, totalCR)
+function enemy.chooseEnemies(totalCR)
     local accumulatedCR = 0
-    local px, py = player.x + player.size/2, player.y + player.size/2
+    local pickedTypes = {}
     
     -- Pickable types based on weights
-    local types = {}
+    local typePool = {}
     for name, mod in pairs(enemy.typeModules) do
-        table.insert(types, {name = name, weight = mod.config.spawnWeight or 1, cr = mod.config.challengeRating or 1})
+        table.insert(typePool, {name = name, weight = mod.config.spawnWeight or 1, cr = mod.config.challengeRating or 1})
     end
     
     local totalWeight = 0
-    for _, t in ipairs(types) do totalWeight = totalWeight + t.weight end
+    for _, t in ipairs(typePool) do totalWeight = totalWeight + t.weight end
     
     local attempts = 0
     while accumulatedCR < totalCR and attempts < 100 do
         attempts = attempts + 1
         local r = love.math.random() * totalWeight
-        local picked = types[1]
+        local picked = typePool[1]
         local currentWeight = 0
-        for _, t in ipairs(types) do
+        for _, t in ipairs(typePool) do
             currentWeight = currentWeight + t.weight
             if r <= currentWeight then
                 picked = t
@@ -107,21 +111,15 @@ function enemy.spawnAll(map, player, totalCR)
         end
         
         if accumulatedCR + picked.cr <= totalCR or accumulatedCR == 0 then
-            enemy.spawn(map, px, py, picked.name)
+            table.insert(pickedTypes, picked.name)
             accumulatedCR = accumulatedCR + picked.cr
         end
     end
+    return pickedTypes
 end
 
-function enemy.spawn(map, px, py, eType)
-    eType = eType or "melee"
-    local typeMod = enemy.typeModules[eType]
-    if not typeMod then return end
-
-    local spawnX, spawnY
-    local minDist = 400
-    local found = false
-    
+function enemy.findSpawnPosition(map, px, py, minDist)
+    minDist = minDist or enemy.config.minSpawnDist
     for i = 1, 100 do
         local tx = love.math.random(1, map.width)
         local ty = love.math.random(1, map.height)
@@ -129,79 +127,102 @@ function enemy.spawn(map, px, py, eType)
         if map.data[ty] and map.data[ty][tx] == 0 then
             local x = (tx - 1) * map.gridSize + map.gridSize/2
             local y = (ty - 1) * map.gridSize + map.gridSize/2
-            local dist = math.sqrt((x - px)^2 + (y - py)^2)
-            
-            if dist > minDist then
-                spawnX, spawnY = x, y
-                found = true
-                break
+            local dx, dy = x - px, y - py
+            if math.sqrt(dx*dx + dy*dy) > minDist then
+                return x, y
             end
         end
     end
-    
-    if found then
-        local e = {
-            type = eType,
-            state = "alive",
-            x = spawnX,
-            y = spawnY,
-            aggro = false,
-            hitFlash = 0,
-            kbX = 0,
-            kbY = 0,
-            path = nil,
-            pathTimer = 0,
-            
-            -- Roaming state
-            roamTargetX = spawnX,
-            roamTargetY = spawnY,
-            roamTimer = love.math.random(1, 4)
-        }
+    return nil
+end
+
+function enemy.instantiate(eType, x, y)
+    local typeMod = enemy.typeModules[eType]
+    if not typeMod then return nil end
+
+    local e = {
+        type = eType,
+        state = "alive",
+        x = x,
+        y = y,
+        aggro = false,
+        hitFlash = 0,
+        kbX = 0,
+        kbY = 0,
+        path = nil,
+        pathTimer = 0,
         
-        typeMod.create(e)
+        -- Roaming state
+        roamTargetX = x,
+        roamTargetY = y,
+        roamTimer = love.math.random(1, 4)
+    }
+    
+    typeMod.create(e)
 
-        function e:takeDamage(damage, kx, ky)
-            if self.state == "dying" then return end
+    function e:takeDamage(damage, kx, ky)
+        if self.state == "dying" then return end
+        
+        local cfg = typeMod.config
+        self.hp = self.hp - damage
+        self.hitFlash = cfg.hitFlashDuration or 0.15
+        
+        if self.hp <= 0 then
+            if typeMod.deathSound then typeMod.deathSound:play() end
+            self.state = "dying"
             
-            local cfg = typeMod.config
-            self.hp = self.hp - damage
-            self.hitFlash = cfg.hitFlashDuration or 0.15
+            local pCount = cfg.deathParticleCount or 15
+            local spd = cfg.deathParticleSpeed or 150
+            local life = cfg.deathParticleLife or 0.5
+            for p = 1, pCount do
+                table.insert(enemy.particles, {
+                    x = self.x, y = self.y,
+                    vx = math.random(-spd, spd), 
+                    vy = math.random(-spd, spd),
+                    life = life, 
+                    maxLife = life, 
+                    size = math.random(2, 4)
+                })
+            end
             
-            if self.hp <= 0 then
-                if typeMod.deathSound then typeMod.deathSound:play() end
-                self.state = "dying"
-                
-                local pCount = cfg.deathParticleCount or 15
-                local spd = cfg.deathParticleSpeed or 150
-                local life = cfg.deathParticleLife or 0.5
-                for p = 1, pCount do
-                    table.insert(enemy.particles, {
-                        x = self.x, y = self.y,
-                        vx = math.random(-spd, spd), 
-                        vy = math.random(-spd, spd),
-                        life = life, 
-                        maxLife = life, 
-                        size = math.random(2, 4)
-                    })
-                end
-                
-                if cfg and soul and love.math.random() < (cfg.soulDropRate or 0.65) then
-                    local amount = love.math.random(cfg.soulMinDrop or 3, cfg.soulMaxDrop or 5)
-                    soul.spawn(self.x, self.y, amount)
-                end
-            else
-                if typeMod.hitSound then typeMod.hitSound:play() end
-                self.kbX, self.kbY = kx, ky
-                
-                if self.attackState == "winding" or self.attackState == "charging" then
-                    self.attackState = "none"
-                    self.attackCooldown = 1.2
-                end
+            if cfg and soul and love.math.random() < (cfg.soulDropRate or 0.65) then
+                local amount = love.math.random(cfg.soulMinDrop or 3, cfg.soulMaxDrop or 5)
+                soul.spawn(self.x, self.y, amount)
+            end
+        else
+            if typeMod.hitSound then typeMod.hitSound:play() end
+            self.kbX, self.kbY = kx, ky
+            
+            if self.attackState == "winding" or self.attackState == "charging" then
+                self.attackState = "none"
+                self.attackCooldown = 1.2
             end
         end
-
-        table.insert(enemy.list, e)
     end
+
+    table.insert(enemy.list, e)
+    return e
+end
+
+function enemy.spawnAll(map, player, totalCR)
+    totalCR = totalCR or 0
+    local px, py = player.x + player.size/2, player.y + player.size/2
+    local typesToSpawn = enemy.chooseEnemies(totalCR)
+    
+    for _, eType in ipairs(typesToSpawn) do
+        local x, y = enemy.findSpawnPosition(map, px, py)
+        if x and y then
+            enemy.instantiate(eType, x, y)
+        end
+    end
+end
+
+function enemy.spawn(map, px, py, eType)
+    local x, y = enemy.findSpawnPosition(map, px, py)
+    if x and y then
+        return enemy.instantiate(eType or "melee", x, y)
+    end
+    return nil
 end
 
 function enemy.update(dt, player, map)

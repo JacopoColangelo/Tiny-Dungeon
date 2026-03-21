@@ -15,11 +15,6 @@ local skilltree = require("src.skilltree")
 local projectile= require("src.projectile")
 local game = {}
 
--- Difficulty/Spawning Config
-game.config = {
-    mapCR = 4,              -- Challenge Rating for the dungeon
-}
-
 -- Rendering references (assigned in refreshCanvas or passed in draw)
 local screenCanvas
 local ambient
@@ -96,23 +91,31 @@ function game.loadHub()
     hub.generate() 
 end
 
-local function loadDungeon()
-    map.generate()
+local function loadDungeon(levelIndex)
+    if levelIndex then map.setCurrentLevel(levelIndex) end
+    local config = map.getConfig()
+    map.generate(config)
     shadows.updateMapEdges(map)
     
     levelType = "dungeon"
     gameState = "play"
     
-    -- Center player in the new dungeon
-    player.x = map.width * map.gridSize / 2
-    player.y = map.height * map.gridSize / 2
+    -- Reset level state
+    enemy.init()
+    soul.init()
+    projectile.init()
+    
+    -- Center player in the new dungeon's starting tile
+    player.x = (map.spawnX - 1) * map.gridSize + (map.gridSize/2 - player.size/2)
+    player.y = (map.spawnY - 1) * map.gridSize + (map.gridSize/2 - player.size/2)
     player.targetX = player.x + player.size/2
     player.targetY = player.y + player.size/2
     player.hp = player.maxHp
-
-    -- Spawn Enemies
-    local mapCR = game.config and game.config.mapCR or 1.5
-    enemy.spawnAll(map, player, mapCR)
+    player.shadowPolygon = nil
+    
+    -- Spawn Enemies (Uses CR from config)
+    local config = map.getConfig()
+    enemy.spawnAll(map, player, config.cr)
     camera.snapTo(player)
     
     if gameOverSound then gameOverSound:stop() end
@@ -124,22 +127,6 @@ local function loadDungeon()
         ambient:play()
         ambientMuffled:play()
     end
-    
-    -- Center player in starting tile
-    player.x = (map.spawnX - 1) * map.gridSize + (map.gridSize/2 - player.size/2)
-    player.y = (map.spawnY - 1) * map.gridSize + (map.gridSize/2 - player.size/2)
-    player.targetX = player.x + player.size/2
-    player.targetY = player.y + player.size/2
-    player.shadowPolygon = nil
-    
-    portalPromptAlpha = 0
-    
-    -- Spawn enemies
-    enemy.init()
-    soul.init()
-    projectile.init()
-    
-    enemy.spawnAll(map, player, game.config.mapCR)
 end
 
 function game.load()
@@ -187,6 +174,8 @@ function game.getCanvas() return screenCanvas end
 function game.getShader() return crtShader end
 function game.getLevelType() return levelType end
 function game.isGameOver() return gameState == "gameover" end
+function game.getCurrentLevel() return map.getCurrentLevel() end
+function game.setCurrentLevel(index) map.setCurrentLevel(index) end
 
 -- ── Update ───────────────────────────────────────────────────────────────────
 
@@ -555,7 +544,7 @@ end
 
 
 function game.saveGame()
-    if storage.saveGame(player, inventory, skilltree, levelType) then
+    if storage.saveGame(player, inventory, skilltree, levelType, game) then
         hud.triggerSaveNotification()
     end
 end
@@ -568,6 +557,7 @@ function game.newGame()
     -- Reset Session/UI state
     hitStopTimer = 0
     clickEffect.active = false
+    game.setCurrentLevel(1)
     
     storage.newGame(game, player, inventory, skilltree)
 end

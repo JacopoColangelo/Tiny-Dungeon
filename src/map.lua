@@ -1,5 +1,7 @@
 local map = {}
+local dungeon_data = require("src.dungeon_data")
 map.isHub = false
+map.currentLevelIndex = 1
 
 map.gridSize = 50 
 map.width = 40    
@@ -9,11 +11,22 @@ map.spawnX = 0
 map.spawnY = 0
 map.portalCollisionRadius = 15
 
-function map.generate(seed)
-    if seed then
-        love.math.setRandomSeed(seed)
-        math.randomseed(seed)
+function map.getCurrentLevel() return map.currentLevelIndex end
+function map.setCurrentLevel(index) map.currentLevelIndex = index end
+function map.getConfig() return dungeon_data.get(map.currentLevelIndex) end
+
+function map.generate(config)
+    config = config or map.getConfig()
+    if config.seed then
+        love.math.setRandomSeed(config.seed)
+        math.randomseed(config.seed)
     end
+    
+    -- Override map properties from config
+    map.width = config.width or map.width
+    map.height = config.height or map.height
+    local steps = config.walkerSteps or 600
+    
     map.decorations = {}
     map.contours = {}
     -- 1. Fill map with walls (1)
@@ -31,7 +44,6 @@ function map.generate(seed)
     
     map.data[walkY][walkX] = 0 
     
-    local steps = 600 
     for i = 1, steps do
         local dir = love.math.random(1, 4)
         if dir == 1 and walkY > 2 then walkY = walkY - 1

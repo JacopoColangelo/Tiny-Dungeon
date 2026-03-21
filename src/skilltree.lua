@@ -97,7 +97,6 @@ function skilltree.setUnlocked(saved, player)
         local sk = skills.get(id)
         if sk then
             unlocked[id] = true
-            sk.onUnlock(player)
         end
     end
 end

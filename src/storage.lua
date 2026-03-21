@@ -113,12 +113,20 @@ end
 -- GAME SPECIFIC PERSISTENCE
 -- ============================================================================
 
-function storage.saveGame(player, inventory, skilltree, levelType)
+function storage.saveGame(player, inventory, skilltree, levelType, gameModule)
     local saveData = {
         soulsTotal = player.soulsTotal,
         playerX = player.x,
         playerY = player.y,
         level = levelType,
+        currentLevelIndex = gameModule.getCurrentLevel(),
+        stats = {
+            maxHp = player.maxHp,
+            speed = player.speed,
+            torchSize = player.torchSize,
+            sweepDamage = player.skills.sweep.damage,
+            sweepCooldown = player.skills.sweep.cooldown,
+        },
         inventory = inventory.getSlots(),
         skilltree = skilltree.getUnlocked(),
     }
@@ -140,6 +148,18 @@ function storage.loadGame(gameModule, player, inventory, skilltree, cameraModule
         player.x = data.playerX or player.x
         player.y = data.playerY or player.y
         local levelType = data.level or "hub"
+        local levelIndex = data.currentLevelIndex or 1
+        gameModule.setCurrentLevel(levelIndex)
+
+        -- Restore stats if they exist (prevents skill accumulation bug)
+        if data.stats then
+            player.maxHp = data.stats.maxHp or player.maxHp
+            player.hp = player.maxHp -- Restore to full on load for simplicity, or we could save current HP
+            player.speed = data.stats.speed or player.speed
+            player.torchSize = data.stats.torchSize or player.torchSize
+            player.skills.sweep.damage = data.stats.sweepDamage or player.skills.sweep.damage
+            player.skills.sweep.cooldown = data.stats.sweepCooldown or player.skills.sweep.cooldown
+        end
 
         -- Inventory: restore saved slots (or fall back to starter set)
         inventory.init()
