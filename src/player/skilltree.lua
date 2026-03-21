@@ -8,9 +8,9 @@
 -- TODO: Make the talent tree dynamic and not hardcoded so its easy to add more talents and have them automatically positioned in the grid.
 -- TODO: Make the talent tree visually appealing.
 
-local skills   = require("src.skills")
-local hud      = require("src.hud")
-local ui_audio = require("src.ui_audio")
+local skills   = require("src.player.skills")
+local hud      = require("src.interface.hud")
+local ui_audio = require("src.interface.ui_audio")
 
 local skilltree = {}
 

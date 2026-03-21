@@ -1,4 +1,4 @@
-local inventory = require("src.inventory")
+local inventory = require("src.interface.inventory")
 
 local player = {
     

@@ -1,9 +1,9 @@
 -- Portal Choice Overlay
 -- Shown when interacting with the active exit portal inside a cleared dungeon.
 
-local hud = require("src.hud")
-local ui_audio = require("src.ui_audio")
-local dungeon_data = require("src.dungeon_data")
+local hud = require("src.interface.hud")
+local ui_audio = require("src.interface.ui_audio")
+local dungeon_data = require("src.dungeons.dungeon_data")
 
 local pc = {}
 

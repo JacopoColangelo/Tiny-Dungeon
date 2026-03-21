@@ -1,4 +1,4 @@
-local pathfinding = require("src.pathfinding")
+local pathfinding = require("src.gameplay.pathfinding")
 
 --[[
 ============================================================================

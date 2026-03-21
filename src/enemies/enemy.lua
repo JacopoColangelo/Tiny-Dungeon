@@ -1,5 +1,5 @@
-local pathfinding = require("src.pathfinding")
-local soul = require("src.soul")
+local pathfinding = require("src.gameplay.pathfinding")
+local soul = require("src.gameplay.soul")
 
 local enemy = {}
 

@@ -1,12 +1,12 @@
 -- Tiny Dungeon — Entry Point
 -- Routes between menu, options, and gameplay.
 
-local menu    = require("src.menu")
-local options = require("src.options")
-local game    = require("src.game")
-local pause   = require("src.pause")
-local storage = require("src.storage")
-local ui_audio = require("src.ui_audio")
+local menu    = require("src.interface.menu")
+local options = require("src.interface.options")
+local game    = require("src.gameplay.game")
+local pause   = require("src.interface.pause")
+local storage = require("src.gameplay.storage")
+local ui_audio = require("src.interface.ui_audio")
 
 local appState = "menu"           -- "menu" | "options" | "playing" | "paused"
 local optionsReturnState = "menu"  -- where to return after options

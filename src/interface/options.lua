@@ -1,5 +1,5 @@
-local hud = require("src.hud")
-local ui_audio = require("src.ui_audio")
+local hud = require("src.interface.hud")
+local ui_audio = require("src.interface.ui_audio")
 
 local options = {}
 

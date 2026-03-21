@@ -1,5 +1,5 @@
-local map = require("src.map")
-local shadows = require("src.shadows")
+local map = require("src.dungeons.map")
+local shadows = require("src.lighting.shadows")
 
 local projectile = {}
 

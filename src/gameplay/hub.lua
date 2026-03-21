@@ -1,7 +1,7 @@
 -- Hub Level: Withered Grove with Gothic Sanctuary
 -- Hand-crafted map with distinct visual palette from dungeons
 
-local shadows = require("src.shadows")
+local shadows = require("src.lighting.shadows")
 
 local hub = {}
 hub.isHub = true

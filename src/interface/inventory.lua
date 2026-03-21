@@ -2,9 +2,9 @@
 -- Manages the player's item inventory: state, stacking, and full UI rendering.
 -- Open/close with Tab. Tooltip on hover. Right-click context menu for actions.
 
-local items    = require("src.items")
-local hud      = require("src.hud")
-local ui_audio = require("src.ui_audio")
+local items    = require("src.player.items")
+local hud      = require("src.interface.hud")
+local ui_audio = require("src.interface.ui_audio")
 
 local inventory = {}
 

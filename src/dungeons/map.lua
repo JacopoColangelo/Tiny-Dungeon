@@ -1,5 +1,5 @@
 local map = {}
-local dungeon_data = require("src.dungeon_data")
+local dungeon_data = require("src.dungeons.dungeon_data")
 map.isHub = false
 map.currentLevelIndex = 1
 
