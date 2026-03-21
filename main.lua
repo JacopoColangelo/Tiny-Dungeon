@@ -1,60 +1,72 @@
--- Tiny Dungeon — Entry Point
--- Routes between menu, options, and gameplay.
+-- ============================================================================
+-- Tiny Dungeon — Main Entry Point
+-- ============================================================================
+-- Routes execution between menu, options, and gameplay states.
+-- Manages the virtual resolution canvas and CRT shader rendering.
+-- ============================================================================
+
+-- ─── Dependencies ───────────────────────────────────────────────────────────
 
 local menu    = require("src.interface.menu")
 local options = require("src.interface.options")
-local game    = require("src.gameplay.game")
 local pause   = require("src.interface.pause")
+local ui_audio= require("src.interface.ui_audio")
+local game    = require("src.gameplay.game")
 local storage = require("src.gameplay.storage")
-local ui_audio = require("src.interface.ui_audio")
 
-local appState = "menu"           -- "menu" | "options" | "playing" | "paused"
-local optionsReturnState = "menu"  -- where to return after options
+-- ─── Configuration & State ──────────────────────────────────────────────────
 
--- Virtual Resolution Constants
 local VIRTUAL_W = 1280
 local VIRTUAL_H = 720
 
--- ── State ────────────────────────────────────────────────────────────────────
+-- "menu" | "options" | "playing" | "paused"
+local appState = "menu"           
+local optionsReturnState = "menu"  
 
--- Rendering references (assigned in refreshCanvas or passed in draw)
-local screenCanvas--TODO: Move hub related code to hub.lua
---TODO: Move map related code to map.lua
---TODO: Move anything that isn't game loop related to its own file
+-- Rendering references
+local screenCanvas
 local crtShader
 
--- Scale/Offset for drawing virtual canvas to screen
+-- Screen scaling bounds
 local scale = 1
 local offsetX = 0
 local offsetY = 0
 
+-- ─── Core Utilities ─────────────────────────────────────────────────────────
+
+-- Rebuilds canvases to match the current window size
 local function refreshAllCanvases()
-    -- Always use 1080p for internal rendering
     screenCanvas = love.graphics.newCanvas(VIRTUAL_W, VIRTUAL_H)
     game.refreshCanvas()
     
-    -- Recalculate scaling/centering for current window
-    local sw = love.graphics.getWidth()
-    local sh = love.graphics.getHeight()
+    local sw, sh = love.graphics.getDimensions()
     scale = math.min(sw / VIRTUAL_W, sh / VIRTUAL_H)
     offsetX = (sw - VIRTUAL_W * scale) / 2
     offsetY = (sh - VIRTUAL_H * scale) / 2
 end
 
--- Convert real mouse coords to virtual 1080p coords
+-- Converts physical window coordinates to virtual game coordinates
 local function getVirtualMousePos(mx, my)
     local vx = (mx - offsetX) / scale
     local vy = (my - offsetY) / scale
     return vx, vy
 end
 
+-- Safely aborts gameplay state and returns to the titlescreen
+local function transitionToMenu()
+    game.stop()
+    menu.load(storage.exists())
+    appState = "menu"
+end
+
+-- ─── LÖVE Callbacks ─────────────────────────────────────────────────────────
+
 function love.load()
     love.window.setTitle("Tiny Dungeon")
 
-    -- Load options first (applies saved resolution/fullscreen/volume)
     options.load()
-
     refreshAllCanvases()
+    
     crtShader = love.graphics.newShader("assets/shaders/crt.glsl")
 
     menu.load(storage.exists())
@@ -63,14 +75,15 @@ function love.load()
 end
 
 function love.update(dt)
-    -- Animate CRT
     crtShader:send("time", love.timer.getTime())
     ui_audio.update(dt)
 
+    local vx, vy = getVirtualMousePos(love.mouse.getPosition())
+
     if appState == "menu" then
-        local vx, vy = getVirtualMousePos(love.mouse.getPosition())
-        game.update(dt, vx, vy, true, false) -- Logic paused, Unmuffled for menu
+        game.update(dt, vx, vy, true, false)
         local action = menu.update(dt, vx, vy)
+        
         if action == "newgame" then
             menu.resetAction()
             storage.delete()
@@ -88,10 +101,11 @@ function love.update(dt)
         elseif action == "quit" then
             love.event.quit()
         end
+
     elseif appState == "options" then
-        local vx, vy = getVirtualMousePos(love.mouse.getPosition())
-        game.update(dt, vx, vy, true, false) -- Logic paused, Unmuffled for options
+        game.update(dt, vx, vy, true, false)
         local result = options.update(dt, vx, vy)
+        
         if result == "refresh" then
             refreshAllCanvases()
         elseif result == "back" then
@@ -100,13 +114,14 @@ function love.update(dt)
             refreshAllCanvases()
             appState = optionsReturnState
         end
+
     elseif appState == "playing" then
-        local vx, vy = getVirtualMousePos(love.mouse.getPosition())
         game.update(dt, vx, vy, false, false)
+
     elseif appState == "paused" then
-        local vx, vy = getVirtualMousePos(love.mouse.getPosition())
         game.update(dt, vx, vy, true, true)
         local action = pause.update(dt, vx, vy)
+        
         if action == "resume" then
             pause.resetAction()
             appState = "playing"
@@ -116,9 +131,7 @@ function love.update(dt)
             optionsReturnState = "paused"
         elseif action == "menu" then
             pause.resetAction()
-            game.stop()
-            menu.load(storage.exists())
-            appState = "menu"
+            transitionToMenu()
         end
     end
 end
@@ -126,34 +139,33 @@ end
 function love.keypressed(key)
     if appState == "menu" then
         menu.keypressed(key)
+        
     elseif appState == "options" then
         options.keypressed(key)
+        
     elseif appState == "playing" then
+        -- Forward UI overlay/menu inputs directly
         if key == "escape" then
-            if game.isInventoryOpen() or game.isSkillTreeOpen() or game.isDungeonSelectOpen() then
-                -- Let the active module close itself
-                local result = game.keypressed(key)
+            if game.isInventoryOpen() or game.isSkillTreeOpen() or game.isDungeonSelectOpen() or game.isPortalChoiceOpen() then
+                game.keypressed(key)
             elseif not game.isNotificationActive() and not game.isGameOver() then
                 appState = "paused"
             end
+            
         elseif key == "tab" or key == "i" then
-            -- Let game.lua handle these keys (open/close UI overlays)
             if not game.isNotificationActive() and not game.isGameOver() then
-                local result = game.keypressed(key)
-                if result == "menu" then
-                    game.stop()
-                    menu.load(storage.exists())
-                    appState = "menu"
+                if game.keypressed(key) == "menu" then
+                    transitionToMenu()
                 end
             end
+            
+        -- Forward all standard gameplay inputs
         else
-            local result = game.keypressed(key)
-            if result == "menu" then
-                game.stop()
-                menu.load(storage.exists())
-                appState = "menu"
+            if game.keypressed(key) == "menu" then
+                transitionToMenu()
             end
         end
+        
     elseif appState == "paused" then
         pause.keypressed(key)
     end
@@ -167,20 +179,31 @@ function love.mousepressed(mx, my, button)
     elseif appState == "options" then
         options.mousepressed(vx, vy, button)
     elseif appState == "playing" then
-        local result = game.mousepressed(vx, vy, button)
-        if result == "menu" then
-            game.stop()
-            menu.load(storage.exists())
-            appState = "menu"
+        if game.mousepressed(vx, vy, button) == "menu" then
+            transitionToMenu()
         end
     elseif appState == "paused" then
         pause.mousepressed(vx, vy, button)
     end
 end
 
+function love.mousemoved(mx, my)
+    if appState == "playing" then
+        local vx, vy = getVirtualMousePos(mx, my)
+        game.mousemoved(vx, vy)
+    end
+end
+
+function love.wheelmoved(x, y)
+    if appState == "playing" then
+        game.wheelmoved(x, y)
+    end
+end
+
 function love.draw()
-    -- Draw state content to virtual canvas
     local vx, vy = getVirtualMousePos(love.mouse.getPosition())
+    
+    -- 1. Draw active state to virtual canvas
     if appState == "menu" then
         menu.draw(screenCanvas, vx, vy)
     elseif appState == "options" then
@@ -191,27 +214,10 @@ function love.draw()
         game.draw(screenCanvas, true, vx, vy)
     end
 
-    -- Draw Virtual Canvas to screen with CRT and Letterboxing
-    love.graphics.clear(0, 0, 0, 1) -- Black for pillar/letterbox
-    
+    -- 2. Draw Virtual Canvas to window (scaled, centered, bordered with CRT effect)
+    love.graphics.clear(0, 0, 0, 1)
     love.graphics.setShader(crtShader)
     love.graphics.setColor(1, 1, 1, 1)
-    
-    -- Uniform scaling and centering
     love.graphics.draw(screenCanvas, offsetX, offsetY, 0, scale, scale)
-    
     love.graphics.setShader()
-end
-
-function love.wheelmoved(x, y)
-    if appState == "playing" then
-        game.wheelmoved(x, y)
-    end
-end
-
-function love.mousemoved(mx, my)
-    if appState == "playing" then
-        local vx, vy = getVirtualMousePos(mx, my)
-        game.mousemoved(vx, vy)
-    end
 end

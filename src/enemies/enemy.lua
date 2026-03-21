@@ -4,7 +4,7 @@ local soul = require("src.gameplay.soul")
 local enemy = {}
 
 -- ============================================================================
--- MODULE STATE & TYPES
+-- MODULE STATE & CONFIGURATION
 -- ============================================================================
 
 enemy.list = {}
@@ -17,7 +17,7 @@ enemy.config = {
 }
 
 -- ============================================================================
--- HELPERS (Exposed to enemy types)
+-- COLLISION & MATH HELPERS
 -- ============================================================================
 
 function enemy.isPointInWall(x, y, map)
@@ -28,13 +28,14 @@ function enemy.isPointInWall(x, y, map)
 end
 
 function enemy.isCircleColliding(x, y, radius, map)
-    -- Check center
     if enemy.isPointInWall(x, y, map) then return true end
-    -- Check 8 points on circle (cardinal + ordinal)
+    
+    -- Check 8 points on circle boundary (cardinal + ordinal)
+    local lenience = 0.85
     for i = 0, 7 do
         local angle = i * (math.pi / 4)
-        local px = x + math.cos(angle) * (radius * 0.85) -- slightly more lenient buffer
-        local py = y + math.sin(angle) * (radius * 0.85)
+        local px = x + math.cos(angle) * (radius * lenience)
+        local py = y + math.sin(angle) * (radius * lenience)
         if enemy.isPointInWall(px, py, map) then return true end
     end
     return false
@@ -44,6 +45,7 @@ function enemy.hasLOS(x1, y1, x2, y2, map)
     local dx, dy = x2 - x1, y2 - y1
     local dist = math.sqrt(dx*dx + dy*dy)
     if dist < 5 then return true end
+    
     local steps = math.ceil(dist / 10)
     for s = 1, steps do
         local t = s / steps
@@ -65,7 +67,179 @@ function enemy.addParticle(x, y, color)
 end
 
 -- ============================================================================
--- CORE LOGIC
+-- PRIVATE BEHAVIOR HELPERS (Extracted from Update/Draw)
+-- ============================================================================
+
+local function applyKnockback(e, dt, map)
+    if math.abs(e.kbX) > 1 or math.abs(e.kbY) > 1 then
+        local radius = (e.size or 20) / 2
+        
+        -- Try X movement
+        local nx = e.x + e.kbX * dt
+        if not enemy.isCircleColliding(nx, e.y, radius, map) then
+            e.x = nx
+        else
+            e.kbX = 0 -- Stop X on hit
+        end
+        
+        -- Try Y movement
+        local ny = e.y + e.kbY * dt
+        if not enemy.isCircleColliding(e.x, ny, radius, map) then
+            e.y = ny
+        else
+            e.kbY = 0 -- Stop Y on hit
+        end
+        
+        -- Decay knockback exponentially
+        e.kbX, e.kbY = e.kbX * math.exp(-8 * dt), e.kbY * math.exp(-8 * dt)
+    else
+        e.kbX, e.kbY = 0, 0
+    end
+end
+
+local function handleRoaming(e, dt, map, cfg)
+    e.roamTimer = e.roamTimer - dt
+    if e.roamTimer <= 0 then
+        local rRad = cfg.roamRadius or 150
+        local angle = love.math.random() * math.pi * 2
+        local dist = love.math.random() * rRad
+        local tx = e.x + math.cos(angle) * dist
+        local ty = e.y + math.sin(angle) * dist
+        
+        -- Check if target is valid and has Line of Sight
+        if not enemy.isPointInWall(tx, ty, map) and enemy.hasLOS(e.x, e.y, tx, ty, map) then
+            e.roamTargetX, e.roamTargetY = tx, ty
+            e.roamTimer = love.math.random(cfg.roamWaitMin or 2, cfg.roamWaitMax or 5)
+        else
+            e.roamTimer = 1.0 -- retry soon
+        end
+    end
+    
+    local rdx, rdy = e.roamTargetX - e.x, e.roamTargetY - e.y
+    local rdist = math.sqrt(rdx*rdx + rdy*rdy)
+    if rdist > 5 then
+        local rSpd = cfg.roamSpeed or 40
+        local moveX = (rdx / rdist) * rSpd * dt
+        local moveY = (rdy / rdist) * rSpd * dt
+        local radius = e.size / 2
+        
+        if not enemy.isCircleColliding(e.x + moveX, e.y + moveY, radius, map) then
+            e.x, e.y = e.x + moveX, e.y + moveY
+        else
+            e.roamTargetX, e.roamTargetY = e.x, e.y -- Stop roaming if wall hit
+        end
+    end
+end
+
+local function applySharedPhysics(map)
+    -- 1. Local Repulsion (Enemy vs Enemy)
+    for i = 1, #enemy.list do
+        local e1 = enemy.list[i]
+        for j = i + 1, #enemy.list do
+            local e2 = enemy.list[j]
+            local dx, dy = e2.x - e1.x, e2.y - e1.y
+            local dist = math.sqrt(dx*dx + dy*dy)
+            
+            if dist < 25 and dist > 0 then
+                local push = (25 - dist) / 2
+                local nx, ny = (dx/dist) * push, (dy/dist) * push
+                local r1, r2 = (e1.size or 20) / 2, (e2.size or 20) / 2
+                
+                if not enemy.isCircleColliding(e2.x + nx, e2.y + ny, r2, map) then 
+                    e2.x, e2.y = e2.x + nx, e2.y + ny 
+                end
+                if not enemy.isCircleColliding(e1.x - nx, e1.y - ny, r1, map) then 
+                    e1.x, e1.y = e1.x - nx, e1.y - ny 
+                end
+            end
+        end
+    end
+
+    -- 2. Portal Repulsion (Keep enemies away from the exit portal)
+    local hpx, hpy = map.getPortalWorldPos()
+    if hpx and hpy then
+        for _, e in ipairs(enemy.list) do
+            local dx, dy = e.x - hpx, e.y - hpy
+            local distSq = dx*dx + dy*dy
+            local minDist = (map.portalCollisionRadius or 30) + (e.size or 20) / 2
+            
+            if distSq < minDist * minDist then
+                local dist = math.sqrt(distSq)
+                if dist > 0 then
+                    local push = minDist - dist
+                    local nx = e.x + (dx / dist) * push
+                    local ny = e.y + (dy / dist) * push
+                    local r = (e.size or 20) / 2
+                    
+                    if not enemy.isCircleColliding(nx, ny, r, map) then 
+                        e.x, e.y = nx, ny
+                    else
+                        -- Slide against the portal restriction
+                        if not enemy.isCircleColliding(nx, e.y, r, map) then e.x = nx
+                        elseif not enemy.isCircleColliding(e.x, ny, r, map) then e.y = ny end
+                    end
+                end
+            end
+        end
+    end
+end
+
+local function drawHealthBarAndName(e, player)
+    if not player then return end
+
+    local cx, cy = e.x, e.y
+    local pCenter = { x = player.x + player.size/2, y = player.y + player.size/2 }
+    local dist = math.sqrt((cx - pCenter.x)^2 + (cy - pCenter.y)^2)
+    
+    if dist < 300 then
+        local alpha = (1 - (dist / 300)) * 0.9
+        local hbo = e.hpBarOffset or -20
+        
+        -- HP Bar Background
+        love.graphics.setColor(0, 0, 0, alpha * 0.6)
+        love.graphics.rectangle("fill", cx - 15, cy + hbo, 30, 4)
+        
+        -- HP Bar Fill
+        love.graphics.setColor(1, 0.2, 0.2, alpha)
+        love.graphics.rectangle("fill", cx - 15, cy + hbo, 30 * (e.hp / e.maxHp), 4)
+
+        -- Display Name & Level Tag
+        if e.displayName then
+            local tinyFont = _G.hud and _G.hud.getFont and _G.hud.getFont("tiny")
+            if tinyFont then
+                love.graphics.setFont(tinyFont)
+                local levelStr = tostring(e.level or 1)
+                local nw = tinyFont:getWidth(e.displayName)
+                local lw = tinyFont:getWidth(levelStr)
+                
+                local diamondSize = 10
+                local spacing = 4
+                local totalW = diamondSize + spacing + nw
+                local baseX = cx - totalW / 2
+                local baseY = cy + hbo - 18
+                local uiAlpha = 0.5
+                
+                -- Level Diamond
+                love.graphics.setColor(1, 1, 1, uiAlpha)
+                local dx = baseX + diamondSize / 2
+                local dy = baseY + tinyFont:getHeight() / 2
+                love.graphics.polygon("line", 
+                    dx, dy - diamondSize/2, -- top
+                    dx + diamondSize/2, dy, -- right
+                    dx, dy + diamondSize/2, -- bottom
+                    dx - diamondSize/2, dy  -- left
+                )
+                
+                -- Level Number and Enemy Name
+                love.graphics.print(levelStr, dx - lw/2, dy - tinyFont:getHeight()/2)
+                love.graphics.print(e.displayName, baseX + diamondSize + spacing, baseY)
+            end
+        end
+    end
+end
+
+-- ============================================================================
+-- LIFECYCLE & SPAWNING
 -- ============================================================================
 
 function enemy.init()
@@ -77,7 +251,6 @@ function enemy.init()
     enemy.typeModules.ranged = require("src.enemies.ranged")
     enemy.typeModules.elite_ranged = require("src.enemies.elite_ranged")
 
-    -- Call init on modules if they have it
     for _, mod in pairs(enemy.typeModules) do
         if mod.init then mod.init() end
     end
@@ -86,11 +259,14 @@ end
 function enemy.chooseEnemies(totalCR)
     local accumulatedCR = 0
     local pickedTypes = {}
-    
-    -- Pickable types based on weights
     local typePool = {}
+    
     for name, mod in pairs(enemy.typeModules) do
-        table.insert(typePool, {name = name, weight = mod.config.spawnWeight or 1, cr = mod.config.challengeRating or 1})
+        table.insert(typePool, {
+            name = name, 
+            weight = mod.config.spawnWeight or 1, 
+            cr = mod.config.challengeRating or 1
+        })
     end
     
     local totalWeight = 0
@@ -102,6 +278,7 @@ function enemy.chooseEnemies(totalCR)
         local r = love.math.random() * totalWeight
         local picked = typePool[1]
         local currentWeight = 0
+        
         for _, t in ipairs(typePool) do
             currentWeight = currentWeight + t.weight
             if r <= currentWeight then
@@ -171,6 +348,7 @@ function enemy.instantiate(eType, x, y)
             if typeMod.deathSound then typeMod.deathSound:play() end
             self.state = "dying"
             
+            -- Death Particles
             local pCount = cfg.deathParticleCount or 15
             local spd = cfg.deathParticleSpeed or 150
             local life = cfg.deathParticleLife or 0.5
@@ -185,14 +363,17 @@ function enemy.instantiate(eType, x, y)
                 })
             end
             
+            -- Soul Drop
             if cfg and soul and love.math.random() < (cfg.soulDropRate or 0.65) then
                 local amount = love.math.random(cfg.soulMinDrop or 3, cfg.soulMaxDrop or 5)
                 soul.spawn(self.x, self.y, amount)
             end
         else
+            -- Hit response
             if typeMod.hitSound then typeMod.hitSound:play() end
             self.kbX, self.kbY = kx, ky
             
+            -- Interrupt attacks on hit
             if self.attackState == "winding" or self.attackState == "charging" then
                 self.attackState = "none"
                 self.attackCooldown = 1.2
@@ -225,10 +406,14 @@ function enemy.spawn(map, px, py, eType)
     return nil
 end
 
+-- ============================================================================
+-- MAIN LOOP (Update & Draw)
+-- ============================================================================
+
 function enemy.update(dt, player, map)
     local px, py = player.x + player.size/2, player.y + player.size/2
     
-    -- Update Blood/Death Particles
+    -- 1. Update Blood/Death Particles
     for i = #enemy.particles, 1, -1 do
         local p = enemy.particles[i]
         p.life = p.life - dt
@@ -236,7 +421,7 @@ function enemy.update(dt, player, map)
         if p.life <= 0 then table.remove(enemy.particles, i) end
     end
 
-    -- Update Enemies
+    -- 2. Update Enemy Logic
     for i = #enemy.list, 1, -1 do
         local e = enemy.list[i]
         if e.state == "dying" then
@@ -247,30 +432,7 @@ function enemy.update(dt, player, map)
             
             if e.hitFlash > 0 then e.hitFlash = e.hitFlash - dt end
             
-            -- Apply Knockback (with Axis Sliding)
-            if math.abs(e.kbX) > 1 or math.abs(e.kbY) > 1 then
-                local radius = (e.size or 20) / 2
-                
-                -- Try X movement
-                local nx = e.x + e.kbX * dt
-                if not enemy.isCircleColliding(nx, e.y, radius, map) then
-                    e.x = nx
-                else
-                    e.kbX = 0 -- Stop X on hit
-                end
-                
-                -- Try Y movement
-                local ny = e.y + e.kbY * dt
-                if not enemy.isCircleColliding(e.x, ny, radius, map) then
-                    e.y = ny
-                else
-                    e.kbY = 0 -- Stop Y on hit
-                end
-                
-                e.kbX, e.kbY = e.kbX * math.exp(-8 * dt), e.kbY * math.exp(-8 * dt)
-            else
-                e.kbX, e.kbY = 0, 0
-            end
+            applyKnockback(e, dt, map)
 
             -- Aggro Perception
             if not e.aggro and cfg then
@@ -279,50 +441,16 @@ function enemy.update(dt, player, map)
                 if d < pRad then e.aggro = true end
             end
 
-            -- behavior via type module or roaming
+            -- Execute Type Behavior or Roaming
             if e.aggro then
-                if typeMod then
-                    typeMod.update(e, dt, player, enemy, map)
-                end
+                if typeMod then typeMod.update(e, dt, player, enemy, map) end
             else
-                -- Roaming Behavior
-                if cfg then
-                    e.roamTimer = e.roamTimer - dt
-                    if e.roamTimer <= 0 then
-                        local rRad = cfg.roamRadius or 150
-                        local angle = love.math.random() * math.pi * 2
-                        local dist = love.math.random() * rRad
-                        local tx = e.x + math.cos(angle) * dist
-                        local ty = e.y + math.sin(angle) * dist
-                        
-                        -- Check if target is valid
-                        if not enemy.isPointInWall(tx, ty, map) and enemy.hasLOS(e.x, e.y, tx, ty, map) then
-                            e.roamTargetX, e.roamTargetY = tx, ty
-                            e.roamTimer = love.math.random(cfg.roamWaitMin or 2, cfg.roamWaitMax or 5)
-                        else
-                            e.roamTimer = 1.0 -- retry soon
-                        end
-                    end
-                    
-                    local rdx, rdy = e.roamTargetX - e.x, e.roamTargetY - e.y
-                    local rdist = math.sqrt(rdx*rdx + rdy*rdy)
-                    if rdist > 5 then
-                        local rSpd = cfg.roamSpeed or 40
-                        local moveX = (rdx / rdist) * rSpd * dt
-                        local moveY = (rdy / rdist) * rSpd * dt
-                        local radius = e.size / 2
-                        if not enemy.isCircleColliding(e.x + moveX, e.y + moveY, radius, map) then
-                            e.x, e.y = e.x + moveX, e.y + moveY
-                        else
-                            e.roamTargetX, e.roamTargetY = e.x, e.y -- Stop roaming if hit wall
-                        end
-                    end
-                end
+                if cfg then handleRoaming(e, dt, map, cfg) end
             end
         end
     end
 
-    -- Chain Aggro (Pulling group aggro radius from specific type)
+    -- 3. Chain Aggro Processing
     local changed = true
     while changed do
         changed = false
@@ -339,56 +467,19 @@ function enemy.update(dt, player, map)
         end
     end
     
-    -- Global Updates (delegated to modules)
+    -- 4. Global Module Updates (e.g. Slot management for melee)
     for _, mod in pairs(enemy.typeModules) do
         if mod.globalUpdate then
             mod.globalUpdate(dt, player, enemy, map)
         end
     end
     
-    -- Shared Physics: Local Repulsion
-    for i = 1, #enemy.list do
-        local e1 = enemy.list[i]
-        for j = i + 1, #enemy.list do
-            local e2 = enemy.list[j]
-            local dx, dy = e2.x - e1.x, e2.y - e1.y
-            local dist = math.sqrt(dx*dx + dy*dy)
-            if dist < 25 and dist > 0 then
-                local push = (25 - dist) / 2
-                local nx, ny = (dx/dist) * push, (dy/dist) * push
-                local r2 = (e2.size or 20) / 2
-                local r1 = (e1.size or 20) / 2
-                if not enemy.isCircleColliding(e2.x + nx, e2.y + ny, r2, map) then e2.x, e2.y = e2.x + nx, e2.y + ny end
-                if not enemy.isCircleColliding(e1.x - nx, e1.y - ny, r1, map) then e1.x, e1.y = e1.x - nx, e1.y - ny end
-            end
-        end
-    end
-
-    -- Shared Physics: Portal Repulsion
-    local hpx, hpy = map.getPortalWorldPos()
-    if hpx and hpy then
-        for _, e in ipairs(enemy.list) do
-            local dx, dy = e.x - hpx, e.y - hpy
-            local distSq = dx*dx + dy*dy
-            local minDist = (map.portalCollisionRadius or 30) + (e.size or 20)/2
-            if distSq < minDist * minDist then
-                local dist = math.sqrt(distSq)
-                if dist > 0 then
-                    local push = minDist - dist
-                    local nx, ny = e.x + (dx / dist) * push, e.y + (dy / dist) * push
-                    local r = (e.size or 20) / 2
-                    if not enemy.isCircleColliding(nx, ny, r, map) then e.x, e.y = nx, ny
-                    else
-                        if not enemy.isCircleColliding(nx, e.y, r, map) then e.x = nx
-                        elseif not enemy.isCircleColliding(e.x, ny, r, map) then e.y = ny end
-                    end
-                end
-            end
-        end
-    end
+    -- 5. Shared Physics and Repulsion
+    applySharedPhysics(map)
 end
 
 function enemy.draw(player)
+    -- 1. Draw Enemies
     for _, e in ipairs(enemy.list) do
         local cx, cy = e.x, e.y
         
@@ -408,69 +499,18 @@ function enemy.draw(player)
             typeMod.draw(e)
         end
 
-        -- Health Bar (Shared UI)
-        if player then
-            local dist = math.sqrt((cx - (player.x+player.size/2))^2 + (cy - (player.y+player.size/2))^2)
-            if dist < 300 then
-                local alpha = (1 - (dist / 300)) * 0.9
-                local hbo = e.hpBarOffset or -20
-                love.graphics.setColor(0, 0, 0, alpha * 0.6)
-                love.graphics.rectangle("fill", cx-15, cy + hbo, 30, 4)
-                love.graphics.setColor(1, 0.2, 0.2, alpha)
-                love.graphics.rectangle("fill", cx-15, cy + hbo, 30 * (e.hp/e.maxHp), 4)
-
-                -- Display Name & Level
-                if e.displayName then
-                    local tinyFont = _G.hud and _G.hud.getFont and _G.hud.getFont("tiny")
-                    if tinyFont then
-                        love.graphics.setFont(tinyFont)
-                        local nameStr = e.displayName
-                        local levelStr = tostring(e.level or 1)
-                        local nw = tinyFont:getWidth(nameStr)
-                        local lw = tinyFont:getWidth(levelStr)
-                        
-                        -- Layout: [D] Name  (D is diamond)
-                        local diamondSize = 10
-                        local spacing = 4
-                        local totalW = diamondSize + spacing + nw
-                        local baseX = cx - totalW/2
-                        local baseY = cy + hbo - 18
-                        
-                        -- Stable alpha: clear but non-invasive
-                        local uiAlpha = 0.5
-                        
-                        -- Draw Diamond
-                        love.graphics.setColor(1, 1, 1, uiAlpha)
-                        local dx = baseX + diamondSize/2
-                        local dy = baseY + tinyFont:getHeight()/2
-                        love.graphics.polygon("line", 
-                            dx, dy - diamondSize/2, -- top
-                            dx + diamondSize/2, dy, -- right
-                            dx, dy + diamondSize/2, -- bottom
-                            dx - diamondSize/2, dy  -- left
-                        )
-                        
-                        -- Draw Level Number (centered in diamond)
-                        love.graphics.print(levelStr, dx - lw/2, dy - tinyFont:getHeight()/2)
-                        
-                        -- Draw Name
-                        love.graphics.print(nameStr, baseX + diamondSize + spacing, baseY)
-                    end
-                end
-            end
-        end
+        -- Health Bar and Name Tag
+        drawHealthBarAndName(e, player)
     end
 
-    -- Global Debug Drawing (e.g., Slots)
+    -- 2. Global Debug Drawing (e.g., Target Slots)
     if enemy.showSlots and player then
         for _, mod in pairs(enemy.typeModules) do
-            if mod.globalDraw then
-                mod.globalDraw(player, enemy)
-            end
+            if mod.globalDraw then mod.globalDraw(player, enemy) end
         end
     end
 
-    -- Particles
+    -- 3. Particles
     for _, p in ipairs(enemy.particles) do
         local r, g, b = 1, 0.1, 0.1
         if p.color then r, g, b = p.color[1], p.color[2], p.color[3] end
